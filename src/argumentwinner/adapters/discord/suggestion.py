@@ -44,6 +44,7 @@ async def _suggest(
             beneficiary=interaction.user,
             forced_persona=persona,
             history_limit=bot.app.settings.aw_max_context_turns,
+            voice=bot.app.voice,  # the user sends/copies these as themselves
         )
         return await bot.app.engine.suggest(ctx)
 

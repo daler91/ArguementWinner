@@ -186,6 +186,31 @@ async def test_failed_generation_does_not_advance_the_streak():
     assert session.persona_mismatch_streak == 1  # no reply sent -> no state change
 
 
+async def test_voice_lands_in_the_generation_system_prompt_only():
+    from tests.conftest import make_voice
+
+    engine, fake = engine_with(
+        [make_analysis(), make_batch(("reply", Persona.LOGICIAN, Risk.SAFE))]
+    )
+    await engine.suggest(make_context(voice=make_voice()))
+    assert "nah that's not how any of this works" in fake.requests[1].system  # generation
+    assert "nah that's not how any of this works" not in fake.requests[0].system  # analysis
+
+
+async def test_combat_never_speaks_in_the_users_voice():
+    """Even if a context mistakenly carries a voice profile, combat posts as
+    the bot — the engine guard strips it."""
+    from tests.conftest import make_voice
+
+    engine, fake = engine_with(
+        [make_analysis(), make_batch(("reply", Persona.LOGICIAN, Risk.SAFE))]
+    )
+    await engine.combat_reply(
+        make_context(voice=make_voice()), ArgumentSession(ref=REF)
+    )
+    assert "user's voice" not in fake.requests[1].system
+
+
 async def test_stickiness_peek_matches_commit_on_pivot():
     """peek (pre-generation) and apply (post-generation) must agree: at streak
     PIVOT-1 a disagreeing analysis both generates as AND commits the pivot."""

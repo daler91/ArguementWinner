@@ -15,6 +15,7 @@ from argumentwinner.core.models import (
     Participant,
     Persona,
     Role,
+    VoiceProfile,
 )
 
 PLATFORM = "discord"
@@ -113,6 +114,7 @@ async def build_context(
     forced_persona: Persona | None = None,
     extra_opponent_ids: frozenset[str] = frozenset(),
     history_limit: int = 24,
+    voice: VoiceProfile | None = None,
 ) -> ArgumentContext:
     """Fresh history fetch every invocation — the engine always argues against
     exactly what's still on screen (edits/deletes handled for free)."""
@@ -147,4 +149,5 @@ async def build_context(
         beneficiary=to_participant(beneficiary),
         forced_persona=forced_persona,
         our_recent_lines=our_lines,
+        voice=voice,
     )

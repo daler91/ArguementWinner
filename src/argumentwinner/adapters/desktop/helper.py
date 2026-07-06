@@ -26,6 +26,7 @@ from argumentwinner.core.models import (
     Participant,
     Persona,
     Role,
+    VoiceProfile,
 )
 
 from .notify import notify
@@ -37,7 +38,11 @@ _OPPONENT = Participant(id="opponent", display_name="Opponent")
 _YOU = Participant(id="you", display_name="You")
 
 
-def build_context_from_text(text: str, forced_persona: Persona | None = None) -> ArgumentContext:
+def build_context_from_text(
+    text: str,
+    forced_persona: Persona | None = None,
+    voice: VoiceProfile | None = None,
+) -> ArgumentContext:
     """A single pasted message becomes a one-turn argument context — no history
     to fetch, so the opponent's message is both the target and the transcript."""
     target = ArgumentTurn(
@@ -53,6 +58,7 @@ def build_context_from_text(text: str, forced_persona: Persona | None = None) ->
         transcript=(target,),
         beneficiary=_YOU,
         forced_persona=forced_persona,
+        voice=voice,
     )
 
 
@@ -91,6 +97,7 @@ class DesktopHelper:
     def __init__(self, app: App) -> None:
         self._engine = app.engine
         self._settings = app.settings
+        self._voice = app.voice
         self._cycler = CandidateCycler()
         self._loop = asyncio.new_event_loop()
 
@@ -101,7 +108,7 @@ class DesktopHelper:
         self._loop.run_forever()
 
     async def _suggest(self, text: str) -> EngineResult:
-        ctx = build_context_from_text(text, self._settings.aw_desktop_persona)
+        ctx = build_context_from_text(text, self._settings.aw_desktop_persona, self._voice)
         return await self._engine.suggest(ctx)
 
     # ─── hotkey handlers (run on pynput's listener thread) ─────────────────────
@@ -161,6 +168,7 @@ def run_desktop(app: App) -> None:
         "ArgumentWinner desktop helper is running "
         f"(provider: {app.provider.name}"
         + (f", persona: {persona.value}" if persona else "")
+        + (", voice: on" if app.voice else "")
         + ").\n"
         f"  Copy an opponent's message, then press {app.settings.aw_desktop_hotkey} "
         "to put a comeback on your clipboard.\n"

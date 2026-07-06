@@ -87,3 +87,32 @@ def test_thread_ref_scopes_separately_from_parent():
 def test_dm_ref_has_no_guild():
     dm = SimpleNamespace(id=300, guild=None)
     assert ref_for_channel(dm).guild_id is None
+
+
+# ─── voice profile passthrough ────────────────────────────────────────────────
+
+
+async def test_build_context_passes_voice_through():
+    from argumentwinner.adapters.discord.translate import build_context
+    from tests.conftest import make_voice
+
+    message = msg("you're wrong", author_id=2)
+
+    def history(limit):
+        async def gen():
+            yield message
+
+        return gen()
+
+    channel = SimpleNamespace(id=100, guild=SimpleNamespace(id=7), history=history)
+    bot_user = SimpleNamespace(id=1, name="bot", display_name="bot", bot=True)
+    me = SimpleNamespace(id=3, name="me", display_name="me", bot=False)
+
+    profile = make_voice()
+    ctx = await build_context(
+        channel, message, bot_user=bot_user, beneficiary=me, voice=profile
+    )
+    assert ctx.voice is profile
+
+    ctx_default = await build_context(channel, message, bot_user=bot_user, beneficiary=me)
+    assert ctx_default.voice is None
