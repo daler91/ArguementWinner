@@ -54,6 +54,14 @@ def test_context_carries_forced_persona():
     assert ctx.forced_persona is Persona.SAVAGE
 
 
+def test_context_carries_voice_profile():
+    from tests.conftest import make_voice
+
+    profile = make_voice()
+    assert build_context_from_text("x", voice=profile).voice is profile
+    assert build_context_from_text("x").voice is None
+
+
 # ─── CandidateCycler ──────────────────────────────────────────────────────────
 
 
@@ -110,19 +118,21 @@ class FakeClipboard:
         self.value = text
 
 
-def make_helper(queue) -> DesktopHelper:
-    engine = ArgumentEngine(FakeLLMProvider(queue), EngineSettings(spice=SpiceLevel.MEDIUM))
+def make_helper(queue, voice=None) -> tuple[DesktopHelper, FakeLLMProvider]:
+    fake = FakeLLMProvider(queue)
+    engine = ArgumentEngine(fake, EngineSettings(spice=SpiceLevel.MEDIUM))
     app = App(
         settings=make_settings(),
         provider=None,
         store=InMemorySessionStore(),
         engine=engine,
+        voice=voice,
     )
     helper = DesktopHelper(app)
     import threading
 
     threading.Thread(target=helper._run_loop, daemon=True).start()
-    return helper
+    return helper, fake
 
 
 def make_settings():
@@ -133,7 +143,7 @@ def make_settings():
 
 def test_generate_puts_best_comeback_on_clipboard():
     clip = FakeClipboard("Tabs are better, everyone knows it.")
-    helper = make_helper(
+    helper, _ = make_helper(
         [
             make_analysis(),
             make_batch(
@@ -148,14 +158,14 @@ def test_generate_puts_best_comeback_on_clipboard():
 
 def test_generate_on_empty_clipboard_does_nothing():
     clip = FakeClipboard("   ")
-    helper = make_helper([])
+    helper, _ = make_helper([])
     helper.on_generate(clip.paste, clip.copy)
     assert clip.value == "   "  # untouched, no engine call
 
 
 def test_cycle_pages_through_without_regenerating():
     clip = FakeClipboard("you're wrong")
-    helper = make_helper(
+    helper, _ = make_helper(
         [
             make_analysis(),
             make_batch(
@@ -174,7 +184,7 @@ def test_cycle_pages_through_without_regenerating():
 
 def test_cycle_before_generate_is_a_noop():
     clip = FakeClipboard("original")
-    helper = make_helper([])
+    helper, _ = make_helper([])
     helper.on_cycle(clip.copy)
     assert clip.value == "original"
 
@@ -183,6 +193,18 @@ def test_generation_failure_leaves_clipboard_intact():
     from argumentwinner.core.ports import StructuredOutputError
 
     clip = FakeClipboard("beat this")
-    helper = make_helper([make_analysis(), StructuredOutputError("boom")])
+    helper, _ = make_helper([make_analysis(), StructuredOutputError("boom")])
     helper.on_generate(clip.paste, clip.copy)
     assert clip.value == "beat this"  # not clobbered on failure
+
+
+def test_voice_profile_flows_from_app_into_the_generation_prompt():
+    from tests.conftest import make_voice
+
+    clip = FakeClipboard("you're wrong")
+    helper, fake = make_helper(
+        [make_analysis(), make_batch(("reply", Persona.LOGICIAN, Risk.SAFE))],
+        voice=make_voice(),
+    )
+    helper.on_generate(clip.paste, clip.copy)
+    assert "nah that's not how any of this works" in fake.requests[1].system

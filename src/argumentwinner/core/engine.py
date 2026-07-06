@@ -63,7 +63,13 @@ class ArgumentEngine:
         combat: bool,
     ) -> tuple[CandidateResponse, ...]:
         request = LLMRequest(
-            system=prompts.generation_system(self._settings.spice, self._settings.max_reply_chars),
+            # Combat posts publicly AS THE BOT — it must never speak in the
+            # user's voice, even if a context mistakenly carries one.
+            system=prompts.generation_system(
+                self._settings.spice,
+                self._settings.max_reply_chars,
+                voice=None if combat else ctx.voice,
+            ),
             messages=(
                 ChatMessage(
                     role="user",

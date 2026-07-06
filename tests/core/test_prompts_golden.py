@@ -10,7 +10,7 @@ from pathlib import Path
 
 from argumentwinner.core import prompts
 from argumentwinner.core.models import Persona, Role, SpiceLevel
-from tests.conftest import make_analysis, make_context, make_turn
+from tests.conftest import make_analysis, make_context, make_turn, make_voice
 
 GOLDEN_DIR = Path(__file__).parent / "goldens"
 
@@ -28,6 +28,9 @@ def _rendered() -> dict[str, str]:
         "analysis_system.txt": prompts.ANALYSIS_SYSTEM,
         "analysis_user.txt": prompts.analysis_user(ctx),
         "generation_system_medium.txt": prompts.generation_system(SpiceLevel.MEDIUM),
+        "generation_system_medium_voice.txt": prompts.generation_system(
+            SpiceLevel.MEDIUM, voice=make_voice()
+        ),
         "generation_user_suggest.txt": prompts.generation_user(
             ctx, analysis, Persona.LOGICIAN, Persona.SOCRATIC, 3, combat=False
         ),

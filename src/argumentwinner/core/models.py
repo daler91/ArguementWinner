@@ -69,6 +69,17 @@ class ArgumentTurn:
 
 
 @dataclass(frozen=True)
+class VoiceProfile:
+    """The user's writing voice: freeform style notes plus verbatim samples of
+    messages they actually wrote. Loaded once at startup by the container;
+    adapters attach it per-invocation wherever the USER sends the reply as
+    themselves (never where the bot posts as itself)."""
+
+    notes: str = ""
+    samples: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ArgumentContext:
     """Everything the engine needs for one invocation.
 
@@ -83,6 +94,7 @@ class ArgumentContext:
     beneficiary: Participant
     forced_persona: Persona | None = None
     our_recent_lines: tuple[str, ...] = ()
+    voice: VoiceProfile | None = None
 
 
 @dataclass(frozen=True)

@@ -21,6 +21,7 @@ from argumentwinner.core.models import (
     Persona,
     Risk,
     Role,
+    VoiceProfile,
 )
 
 _ids = count(1)
@@ -51,6 +52,7 @@ def make_context(
     prior: tuple[ArgumentTurn, ...] = (),
     forced_persona: Persona | None = None,
     our_recent_lines: tuple[str, ...] = (),
+    voice: VoiceProfile | None = None,
 ) -> ArgumentContext:
     target = make_turn(target_content)
     return ArgumentContext(
@@ -60,7 +62,18 @@ def make_context(
         beneficiary=US,
         forced_persona=forced_persona,
         our_recent_lines=our_recent_lines,
+        voice=voice,
     )
+
+
+def make_voice(
+    notes: str = "lowercase, terse, dry humor, never uses exclamation marks",
+    samples: tuple[str, ...] = (
+        "nah that's not how any of this works",
+        "source: you made it up",
+    ),
+) -> VoiceProfile:
+    return VoiceProfile(notes=notes, samples=samples)
 
 
 def make_analysis(**overrides) -> Analysis:

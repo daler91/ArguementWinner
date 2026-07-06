@@ -48,7 +48,10 @@ def _render(result: EngineResult) -> str:
 
 
 async def run_repl(app: App) -> None:
-    print(f"ArgumentWinner REPL — provider: {app.provider.name}")
+    print(
+        f"ArgumentWinner REPL — provider: {app.provider.name}"
+        + (", voice: on" if app.voice else "")
+    )
     print(_HELP)
     transcript: list[ArgumentTurn] = []
     forced: Persona | None = None
@@ -112,6 +115,7 @@ async def run_repl(app: App) -> None:
             beneficiary=_US,
             forced_persona=forced,
             our_recent_lines=tuple(t.content for t in transcript if t.role is Role.US)[-8:],
+            voice=app.voice,
         )
         try:
             last_result = await app.engine.suggest(ctx)

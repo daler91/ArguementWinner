@@ -31,6 +31,12 @@ class Settings(BaseSettings):
 
     # Engine
     aw_spice_level: SpiceLevel = SpiceLevel.MEDIUM
+    # Path to a voice-profile markdown file (style notes + sample messages you
+    # wrote) so replies read like YOU typed them. Unset/blank = off;
+    # set-but-missing = startup failure. Deliberately `str` not `Path`:
+    # pydantic coerces "" to Path("."), which would turn an accidentally blank
+    # env var into a confusing failure instead of "off".
+    aw_voice_profile: str | None = None
 
     # Desktop helper (works in any app: copy a message, press the hotkey, the
     # comeback lands on your clipboard ready to paste)

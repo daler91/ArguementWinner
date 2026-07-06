@@ -58,6 +58,23 @@ Linux (Wayland restricts global key capture). Native "copied!" notifications
 use `osascript` on macOS and `notify-send` on Linux; elsewhere the helper just
 prints to its terminal.
 
+## Sound like you (voice profile)
+
+By default the comebacks read like a sharp debater. To make them read like
+*you* wrote them — your capitalization, punctuation, message length, slang:
+
+```bash
+cp voice.example.md voice.md    # then edit it: style notes + real messages you wrote
+echo 'AW_VOICE_PROFILE=voice.md' >> .env
+```
+
+The profile is injected into the generation prompt for the **desktop helper**,
+**`/argue` suggestions**, and the **REPL** — everywhere you send the reply as
+yourself. It deliberately does *not* apply to auto-combat, where the bot posts
+publicly as its own account. Personas still control the *strategy* (Logician,
+Savage, …); the voice controls the *wording*. A set-but-missing file fails
+loudly at startup so a typo'd path can't silently disable it.
+
 ## Using it on Discord
 
 Two modes, both available at once:

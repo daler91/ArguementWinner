@@ -6,7 +6,15 @@ rendered output so prompt changes show up as reviewable diffs.
 
 from __future__ import annotations
 
-from .models import Analysis, ArgumentContext, ArgumentTurn, Persona, Role, SpiceLevel
+from .models import (
+    Analysis,
+    ArgumentContext,
+    ArgumentTurn,
+    Persona,
+    Role,
+    SpiceLevel,
+    VoiceProfile,
+)
 
 PERSONA_BRIEFS: dict[Persona, str] = {
     Persona.LOGICIAN: (
@@ -102,8 +110,46 @@ _SPICE_RULES: dict[SpiceLevel, str] = {
 }
 
 
-def generation_system(spice: SpiceLevel, max_reply_chars: int = 1800) -> str:
-    return (
+def render_voice(profile: VoiceProfile, max_samples: int = 20, max_chars: int = 4000) -> str:
+    """The sound-like-me block appended to the generation system prompt.
+
+    Clamping keeps the FIRST samples — the user put their most representative
+    messages first, so we drop from the tail (deliberately the opposite of
+    render_transcript, which drops the oldest lines)."""
+    parts = [
+        "## The user's voice (MANDATORY)",
+        "The user will send the chosen reply AS THEIR OWN MESSAGE — every "
+        "candidate must read like they typed it themselves. Match the "
+        "capitalization, punctuation, typical message length, slang and level "
+        "of formality shown below exactly. The persona controls the STRATEGY; "
+        "this voice controls the WORDING.",
+    ]
+    budget = max_chars - sum(len(p) + 1 for p in parts)
+    if profile.notes:
+        notes = profile.notes
+        if len(notes) > budget // 2:
+            notes = notes[: budget // 2 - 1] + "…"
+        parts.append("Style notes:\n" + notes)
+        budget -= len(parts[-1]) + 1
+    if profile.samples:
+        sample_lines = ["Real messages the user wrote:"]
+        for sample in profile.samples[:max_samples]:
+            line = f"- {sample}"
+            if budget - (len(line) + 1) < 0:
+                break
+            sample_lines.append(line)
+            budget -= len(line) + 1
+        if len(sample_lines) > 1:
+            parts.append("\n".join(sample_lines))
+    return "\n".join(parts)
+
+
+def generation_system(
+    spice: SpiceLevel,
+    max_reply_chars: int = 1800,
+    voice: VoiceProfile | None = None,
+) -> str:
+    base = (
         "You are the reply stage of an argument-winning engine. You write replies "
         "that WIN the argument — for the crowd and on the merits.\n"
         "\n"
@@ -122,6 +168,9 @@ def generation_system(spice: SpiceLevel, max_reply_chars: int = 1800) -> str:
         f"- Keep each candidate under {max_reply_chars} characters.\n"
         f"\n{_SPICE_RULES[spice]}"
     )
+    if voice is None or not (voice.notes or voice.samples):
+        return base
+    return base + "\n\n" + render_voice(voice)
 
 
 def generation_user(
