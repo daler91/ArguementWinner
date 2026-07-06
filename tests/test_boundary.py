@@ -7,7 +7,14 @@ import re
 from pathlib import Path
 
 CORE = Path(__file__).parent.parent / "src" / "argumentwinner" / "core"
-FORBIDDEN = ("discord", "anthropic", "openai", "argumentwinner.llm", "argumentwinner.adapters")
+FORBIDDEN = (
+    "discord",
+    "telegram",
+    "anthropic",
+    "openai",
+    "argumentwinner.llm",
+    "argumentwinner.adapters",
+)
 
 _IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+([\w.]+)", re.MULTILINE)
 
