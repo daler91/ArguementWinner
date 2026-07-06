@@ -1,5 +1,5 @@
-"""Outbound message shaping: pure, unit-tested. Discord hard-caps messages at
-2000 characters."""
+"""Outbound message shaping for Discord (hard cap: 2000 characters).
+The pure chunking logic lives in adapters/common.py, shared with Telegram."""
 
 from __future__ import annotations
 
@@ -7,42 +7,17 @@ from typing import Any
 
 import discord
 
+from argumentwinner.adapters import common
+
 DISCORD_LIMIT = 2000
-_BOUNDARIES = (". ", "! ", "? ", "\n")
-
-
-def _cut(text: str, limit: int) -> tuple[str, int]:
-    """Return (chunk, consumed) where `consumed` is the number of ORIGINAL
-    characters the chunk covers — the '…' continuation marker is display-only
-    and never counts as consumed input, so splitting loses nothing."""
-    if len(text) <= limit:
-        return text, len(text)
-    window = text[:limit]
-    best = max(window.rfind(b) + len(b.rstrip()) for b in _BOUNDARIES)
-    if best > limit // 4:
-        return window[:best].rstrip(), best
-    space = window.rfind(" ")
-    if space > limit // 4:
-        return window[:space].rstrip() + "…", space
-    return window[: limit - 1].rstrip() + "…", limit - 1
 
 
 def truncate_at_boundary(text: str, limit: int = DISCORD_LIMIT) -> str:
-    """Hard backstop: cut at the last sentence boundary under the limit,
-    falling back to a word boundary, then a plain slice."""
-    return _cut(text, limit)[0]
+    return common.truncate_at_boundary(text, limit)
 
 
 def split_message(text: str, limit: int = DISCORD_LIMIT) -> list[str]:
-    """Chunk genuinely long content at sentence boundaries; each chunk fits
-    and no original characters are lost across chunks."""
-    chunks: list[str] = []
-    remaining = text.strip()
-    while remaining:
-        chunk, consumed = _cut(remaining, limit)
-        chunks.append(chunk)
-        remaining = remaining[consumed:].lstrip()
-    return chunks
+    return common.split_message(text, limit)
 
 
 async def send_reply(target_message: Any, text: str) -> None:

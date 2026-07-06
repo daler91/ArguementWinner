@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     discord_bot_token: SecretStr | None = None
     aw_discord_dev_guild_ids: str = ""
 
+    # Telegram
+    telegram_bot_token: SecretStr | None = None
+
     # Engine
     aw_spice_level: SpiceLevel = SpiceLevel.MEDIUM
     # Path to a voice-profile markdown file (style notes + sample messages you

@@ -13,6 +13,14 @@ In the [Discord Developer Portal](https://discord.com/developers/applications):
 Intent" ON.** Without it every message the bot sees is an empty string and
 nothing works.
 
+## ⚠️ Setup trap #2 (Telegram)
+
+Telegram bots in group chats default to **privacy mode**: they only see
+commands, replies to them, and @mentions. For the transcript cache and
+auto-combat to work you must disable it: **@BotFather → `/setprivacy` →
+Disable** — then **remove and re-add the bot to any group it was already in**
+(Telegram only applies the change on rejoin).
+
 ## Quick start
 
 ```bash
@@ -34,6 +42,10 @@ python -m argumentwinner --desktop
 
 # 5b. Run the Discord bot
 python -m argumentwinner
+
+# 5c. Run the Telegram bot
+pip install -e ".[telegram]"
+python -m argumentwinner --telegram
 ```
 
 ## Desktop helper (argue for you in any app)
@@ -92,6 +104,28 @@ opponent posts, with a cooldown, a reply cap, and a debounce so it never
 spams. `/combat stop` ends it. A thread and its parent channel are separate
 arguments.
 
+## Using it on Telegram
+
+Add the bot to a group (see setup trap #2), then:
+
+**Suggestion mode** — reply to the message you want to beat with `/argue`
+(optionally `/argue savage`). The bot DMs you the candidates with **Send #N**
+/ **Reroll** / persona buttons — pressing Send posts that reply into the group
+for you. If you've never `/start`-ed the bot privately it can't DM you and
+will post the picker in the group instead, so `/start` it once first. Your
+voice profile applies here.
+
+**Auto-combat** — `/combat_start [persona]` (reply to someone's message to
+register them as the opponent) and the bot argues on its own: it engages when
+deliberately @mentioned or when a registered opponent posts, with the same
+cooldown/reply-cap/debounce guards as Discord. `/combat_stop` ends it. Forum
+topics count as separate arguments.
+
+One Telegram limitation to know: bots cannot fetch chat history, so the bot
+keeps a small rolling window of messages seen **while it's running** — right
+after a restart, context is thin until the chat moves again (the `/argue`
+target itself always works, since it rides on your reply).
+
 ## How it decides what to say
 
 Each reply is two LLM calls:
@@ -133,16 +167,21 @@ src/argumentwinner/
 │   └── sessions.py      combat session control-state + in-memory store
 ├── llm/                 anthropic / openai+ollama / fake backends, RoleRouter
 └── adapters/
+    ├── common.py        pure cross-platform helpers (text splitting, engagement rules)
     ├── discord/         translate, suggestion UI, auto-combat, sending
+    ├── telegram/        translate, message cache, picker registry, auto-combat
     ├── desktop/         clipboard + global hotkey helper (works in any app)
     └── cli/             REPL — proves the engine is platform-agnostic
 ```
 
 Design decisions worth knowing:
 
-- **Conversation content is never stored.** Every invocation re-fetches fresh
-  channel history, so edits and deletions are handled for free. Combat
-  sessions hold control state only (persona, opponents, cooldowns).
+- **Conversation content is never stored** (with one platform exception).
+  On Discord every invocation re-fetches fresh channel history, so edits and
+  deletions are handled for free; combat sessions hold control state only
+  (persona, opponents, cooldowns). Telegram's Bot API cannot fetch history,
+  so that adapter keeps a small bounded in-memory window of recent messages
+  (edits update it in place) — adapter state, never engine state.
 - **Fail-fast drop, not a queue.** If the bot is mid-generation or cooling
   down, incoming events are discarded — the next engagement's fresh history
   fetch sees those messages anyway. No burst-spam.

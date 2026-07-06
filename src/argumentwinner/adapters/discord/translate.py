@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from argumentwinner.adapters.common import tag_role
 from argumentwinner.core.models import (
     ArgumentContext,
     ArgumentTurn,
@@ -32,21 +33,6 @@ def annotate_content(message: Any) -> str:
     if getattr(message, "stickers", None):
         content = (content + " [User sent a sticker]").strip()
     return content
-
-
-def tag_role(
-    author_id: str,
-    author_is_bot: bool,
-    *,
-    bot_id: str,
-    beneficiary_id: str,
-    opponent_ids: frozenset[str],
-) -> Role:
-    if author_id == bot_id or author_id == beneficiary_id:
-        return Role.US
-    if author_id in opponent_ids:
-        return Role.OPPONENT
-    return Role.BYSTANDER
 
 
 def to_participant(user: Any) -> Participant:

@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 from discord import app_commands
 
+from argumentwinner.adapters.common import should_engage
 from argumentwinner.core.models import ArgumentSession, ConversationRef, Persona
 from argumentwinner.core.ports import StructuredOutputError
 
@@ -42,26 +43,6 @@ PERSONA_CHOICES = [
     app_commands.Choice(name=p.value.title(), value=p.value)
     for p in (Persona.LOGICIAN, Persona.SAVAGE, Persona.DIPLOMAT, Persona.SOCRATIC)
 ]
-
-
-def should_engage(
-    *,
-    author_id: str,
-    author_is_bot: bool,
-    is_webhook: bool,
-    bot_id: str,
-    mentions_bot: bool,
-    session: ArgumentSession | None,
-    reply_to_bots: bool,
-) -> bool:
-    """Pure engagement rule — guards 1 and 2."""
-    if author_id == bot_id or is_webhook:
-        return False
-    if author_is_bot and not reply_to_bots:
-        return False
-    if mentions_bot:
-        return True
-    return session is not None and author_id in session.opponent_ids
 
 
 def is_deliberate_mention(message: Any, bot_id: str, self_role: Any = None) -> bool:

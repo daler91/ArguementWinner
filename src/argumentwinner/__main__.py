@@ -3,6 +3,7 @@
   python -m argumentwinner            run the Discord bot
   python -m argumentwinner --repl     run the terminal REPL
   python -m argumentwinner --desktop  run the desktop helper (clipboard + hotkey)
+  python -m argumentwinner --telegram run the Telegram bot
 """
 
 from __future__ import annotations
@@ -24,6 +25,9 @@ def main() -> None:
         action="store_true",
         help="run the desktop helper (clipboard + hotkey; works in any app)",
     )
+    mode.add_argument(
+        "--telegram", action="store_true", help="run the Telegram bot (long polling)"
+    )
     args = parser.parse_args()
 
     app = build_app()
@@ -35,6 +39,11 @@ def main() -> None:
         from argumentwinner.adapters.desktop.helper import run_desktop
 
         run_desktop(app)
+    elif args.telegram:
+        from argumentwinner.adapters.telegram.bot import run_telegram_bot
+
+        # run_polling owns its own event loop — call directly, never asyncio.run
+        run_telegram_bot(app)
     else:
         from argumentwinner.adapters.discord.bot import run_bot
 
