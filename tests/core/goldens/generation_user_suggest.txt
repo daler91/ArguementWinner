@@ -1,0 +1,20 @@
+## Argument so far (oldest first)
+[US] Me: Spaces respect the style guide.
+[OPPONENT] Opponent: Style guides are written by cowards.
+[OPPONENT] Opponent: Tabs are objectively better than spaces, everyone knows this.
+
+## The message to beat
+Opponent: Tabs are objectively better than spaces, everyone knows this.
+
+## Ammunition from analysis
+- Their claims: tabs are better than spaces
+- Fallacy — appeal to popularity: they said "everyone knows this" (popularity is not evidence of correctness)
+- Weak points: no argument beyond assertion
+- They dodged: accessibility of configurable tab width
+- Their tone: smug
+
+## Our side already said (NEVER contradict these)
+- Spaces respect the style guide.
+
+## Task
+Write 3 candidate replies, best first: 2 in the logician persona using distinct tactics, and 1 in the socratic persona. Span the allowed risk tiers (at least one safe).
