@@ -1,0 +1,11 @@
+{
+  "updated": "2026-07-06",
+  "source": "manual seed — refresh with `python -m argumentwinner.llm.prices --refresh`",
+  "prices": [
+    {"prefix": "claude-opus-4", "input_per_mtok": 5.0, "output_per_mtok": 25.0},
+    {"prefix": "claude-sonnet-", "input_per_mtok": 3.0, "output_per_mtok": 15.0},
+    {"prefix": "claude-haiku-", "input_per_mtok": 1.0, "output_per_mtok": 5.0},
+    {"prefix": "gpt-4o-mini", "input_per_mtok": 0.15, "output_per_mtok": 0.6},
+    {"prefix": "gpt-4o", "input_per_mtok": 2.5, "output_per_mtok": 10.0}
+  ]
+}

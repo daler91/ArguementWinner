@@ -7,6 +7,7 @@ from argumentwinner.core.models import Analysis, GenerationBatch
 from argumentwinner.core.ports import ChatMessage, LLMRequest
 from argumentwinner.llm.factory import RoleRouter, build_provider
 from argumentwinner.llm.fake import FakeLLMProvider
+from argumentwinner.llm.usage import UsageMeter
 
 
 def settings(**kwargs) -> Settings:
@@ -51,3 +52,19 @@ async def test_role_router_dispatches_on_role_hint():
     assert analysis_provider.requests[0].role_hint == "analysis"
     assert len(generation.requests) == 1
     assert generation.requests[0].role_hint == "generation"
+
+
+def test_meter_reaches_single_provider_leaf():
+    meter = UsageMeter()
+    provider = build_provider(settings(aw_llm_provider="fake"), meter=meter)
+    assert provider._meter is meter
+
+
+def test_meter_reaches_both_role_router_leaves():
+    meter = UsageMeter()
+    provider = build_provider(
+        settings(aw_llm_provider="ollama", aw_model_analyzer="llama-cheap"), meter=meter
+    )
+    assert isinstance(provider, RoleRouter)
+    assert provider._generation._meter is meter
+    assert provider._analysis._meter is meter

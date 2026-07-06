@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     aw_ollama_base_url: str = "http://localhost:11434/v1"
+    # Path to a JSON price table for /usage cost estimates, replacing the
+    # bundled one. Generate with `python -m argumentwinner.llm.prices
+    # --refresh`. Unset = bundled defaults. Same `str` rationale as
+    # aw_voice_profile below.
+    aw_price_table: str | None = None
 
     # Discord
     discord_bot_token: SecretStr | None = None
@@ -54,6 +59,11 @@ class Settings(BaseSettings):
     aw_max_context_turns: int = 24
     aw_session_ttl_minutes: int = 60
     aw_reply_to_bots: bool = False
+
+    # Session persistence: "memory" forgets active arguments on restart,
+    # "sqlite" survives them (file at AW_SQLITE_PATH; *.db is gitignored).
+    aw_session_store: Literal["memory", "sqlite"] = "memory"
+    aw_sqlite_path: str = "argumentwinner.db"
 
     def engine_settings(self) -> EngineSettings:
         return EngineSettings(spice=self.aw_spice_level)

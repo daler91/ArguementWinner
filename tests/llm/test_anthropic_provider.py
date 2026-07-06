@@ -10,6 +10,7 @@ import pytest
 from argumentwinner.core.models import Analysis
 from argumentwinner.core.ports import ChatMessage, LLMRequest, StructuredOutputError
 from argumentwinner.llm.anthropic_provider import AnthropicProvider
+from argumentwinner.llm.usage import UsageMeter
 from tests.conftest import make_analysis
 
 REQUEST = LLMRequest(system="sys", messages=(ChatMessage(role="user", content="analyze"),))
@@ -42,9 +43,11 @@ class StubClient:
         return self._responses.pop(0)
 
 
-def make_provider(responses: list) -> tuple[AnthropicProvider, StubClient]:
+def make_provider(
+    responses: list, meter: UsageMeter | None = None
+) -> tuple[AnthropicProvider, StubClient]:
     stub = StubClient(responses)
-    return AnthropicProvider(model="stub-model", client=stub), stub
+    return AnthropicProvider(model="stub-model", client=stub, meter=meter), stub
 
 
 VALID = make_analysis().model_dump()
@@ -92,3 +95,46 @@ async def test_complete_joins_text_blocks_and_reports_usage():
     assert response.text == "hello world"
     assert response.input_tokens == 10
     assert response.output_tokens == 5
+
+
+# ─── metering: one UsageEvent per API roundtrip ───────────────────────────────
+
+
+async def test_meter_records_one_event_per_happy_structured_call():
+    meter = UsageMeter()
+    provider, _ = make_provider([_tool_use_response(VALID)], meter=meter)
+    await provider.complete_structured(REQUEST, Analysis)
+    assert meter.snapshot()[("anthropic", "stub-model")] == (1, 10, 5)
+
+
+async def test_meter_records_both_roundtrips_on_parse_retry():
+    meter = UsageMeter()
+    provider, _ = make_provider(
+        [_tool_use_response({"claims": "not-a-list"}), _tool_use_response(VALID)], meter=meter
+    )
+    await provider.complete_structured(REQUEST, Analysis)
+    assert meter.snapshot()[("anthropic", "stub-model")] == (2, 20, 10)
+
+
+async def test_meter_records_spend_even_when_both_attempts_fail():
+    meter = UsageMeter()
+    provider, _ = make_provider(
+        [_tool_use_response({"bogus": 1}), _tool_use_response({"bogus": 2})], meter=meter
+    )
+    with pytest.raises(StructuredOutputError):
+        await provider.complete_structured(REQUEST, Analysis)
+    assert meter.snapshot()[("anthropic", "stub-model")][0] == 2
+
+
+async def test_meter_records_truncated_response_before_the_raise():
+    truncated = SimpleNamespace(
+        content=[],
+        model="stub-model",
+        usage=SimpleNamespace(input_tokens=10, output_tokens=5),
+        stop_reason="max_tokens",
+    )
+    meter = UsageMeter()
+    provider, _ = make_provider([truncated], meter=meter)
+    with pytest.raises(StructuredOutputError):
+        await provider.complete_structured(REQUEST, Analysis)
+    assert meter.snapshot()[("anthropic", "stub-model")] == (1, 10, 5)

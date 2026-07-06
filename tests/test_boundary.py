@@ -12,8 +12,10 @@ FORBIDDEN = (
     "telegram",
     "anthropic",
     "openai",
+    "aiosqlite",
     "argumentwinner.llm",
     "argumentwinner.adapters",
+    "argumentwinner.storage",
 )
 
 _IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+([\w.]+)", re.MULTILINE)
