@@ -1,0 +1,12 @@
+## Argument so far (oldest first)
+[US] Me: Spaces respect the style guide.
+[OPPONENT] Opponent: Style guides are written by cowards.
+[OPPONENT] Opponent: Tabs are objectively better than spaces, everyone knows this.
+
+## The message we must beat (from the opponent)
+Opponent: Tabs are objectively better than spaces, everyone knows this.
+
+## Things OUR side already said (for dodged_points)
+- Spaces respect the style guide.
+
+Analyze the opponent's message.
