@@ -112,3 +112,90 @@ def test_state_digest_is_one_line_of_plain_string_assembly():
     assert "appeal to popularity" in digest
     assert "They dodged" in digest
     assert "\n" not in digest
+
+
+# ─── review-hardened behavior ─────────────────────────────────────────────────
+
+
+async def test_combat_hard_filters_spice_cap_violations():
+    """The spice cap is a hard filter in combat (public, no human in the
+    loop) — an LLM that disobeys the prompt gets its reply skipped, not sent."""
+    mild = ArgumentEngine(
+        FakeLLMProvider(
+            [
+                make_analysis(),
+                make_batch(
+                    ("burn it all down", Persona.SAVAGE, Risk.NUCLEAR),
+                    ("also too hot", Persona.SAVAGE, Risk.SPICY),
+                ),
+            ]
+        ),
+        EngineSettings(spice=SpiceLevel.MILD),
+    )
+    try:
+        await mild.combat_reply(make_context(), ArgumentSession(ref=REF))
+    except StructuredOutputError:
+        pass
+    else:
+        raise AssertionError("over-cap candidates must be rejected, not posted")
+
+
+async def test_combat_filter_picks_first_allowed_candidate():
+    mild = ArgumentEngine(
+        FakeLLMProvider(
+            [
+                make_analysis(),
+                make_batch(
+                    ("too hot", Persona.SAVAGE, Risk.NUCLEAR),
+                    ("measured and safe", Persona.LOGICIAN, Risk.SAFE),
+                ),
+            ]
+        ),
+        EngineSettings(spice=SpiceLevel.MILD),
+    )
+    candidate = await mild.combat_reply(make_context(), ArgumentSession(ref=REF))
+    assert candidate.text == "measured and safe"
+
+
+async def test_degraded_analysis_never_touches_the_stickiness_streak():
+    """Two parse failures must NOT pivot a sticky persona — fallback analyses
+    are not genuine disagreements."""
+    session = ArgumentSession(ref=REF, persona=Persona.SAVAGE, persona_mismatch_streak=1)
+    engine, fake = engine_with(
+        [
+            StructuredOutputError("parse failed"),
+            make_batch(("still savage", Persona.SAVAGE, Risk.SPICY)),
+        ]
+    )
+    await engine.combat_reply(make_context(), session)
+    assert session.persona is Persona.SAVAGE
+    assert session.persona_mismatch_streak == 1  # untouched
+    assert "savage" in fake.requests[1].messages[0].content  # kept the current voice
+
+
+async def test_failed_generation_does_not_advance_the_streak():
+    session = ArgumentSession(ref=REF, persona=Persona.DIPLOMAT, persona_mismatch_streak=1)
+    engine, _ = engine_with(
+        [make_analysis(recommended_persona=Persona.SAVAGE), StructuredOutputError("boom")]
+    )
+    try:
+        await engine.combat_reply(make_context(), session)
+    except StructuredOutputError:
+        pass
+    assert session.persona is Persona.DIPLOMAT
+    assert session.persona_mismatch_streak == 1  # no reply sent -> no state change
+
+
+async def test_stickiness_peek_matches_commit_on_pivot():
+    """peek (pre-generation) and apply (post-generation) must agree: at streak
+    PIVOT-1 a disagreeing analysis both generates as AND commits the pivot."""
+    session = ArgumentSession(ref=REF, persona=Persona.DIPLOMAT, persona_mismatch_streak=1)
+    engine, fake = engine_with(
+        [
+            make_analysis(recommended_persona=Persona.SAVAGE),
+            make_batch(("pivoted reply", Persona.SAVAGE, Risk.SPICY)),
+        ]
+    )
+    await engine.combat_reply(make_context(), session)
+    assert session.persona is Persona.SAVAGE  # committed
+    assert "savage" in fake.requests[1].messages[0].content  # and generated as

@@ -29,6 +29,9 @@ def _cap_for_spice(persona: Persona, spice: SpiceLevel) -> Persona:
     return persona
 
 
+_HEATED_TONES = ("hostile", "smug", "mocking", "condescending", "aggressive", "sarcastic")
+
+
 def recommend(analysis: Analysis, spice: SpiceLevel) -> Persona:
     """The engine's own read of the best persona, used when the analysis
     recommendation is AUTO/absent and as a sanity anchor."""
@@ -38,7 +41,9 @@ def recommend(analysis: Analysis, spice: SpiceLevel) -> Persona:
             persona = Persona.LOGICIAN
         elif analysis.dodged_points:
             persona = Persona.SOCRATIC
-        elif analysis.tone in ("hostile", "smug", "mocking", "condescending"):
+        elif any(t in analysis.tone.lower() for t in _HEATED_TONES):
+            # tone is a free-text LLM field ("smug and dismissive") —
+            # substring match, never exact equality
             persona = Persona.SAVAGE
         else:
             persona = Persona.DIPLOMAT
@@ -58,6 +63,17 @@ def select_personas(
         primary = recommend(analysis, spice)
     runner_up = _cap_for_spice(COMPLEMENT[primary], spice)
     return primary, runner_up
+
+
+def peek_stickiness(session: ArgumentSession, recommended: Persona) -> Persona:
+    """What apply_stickiness would return, WITHOUT mutating the session — the
+    engine peeks before generation and only commits after it succeeds, so a
+    failed generation never advances the streak."""
+    if session.persona is Persona.AUTO or recommended is session.persona:
+        return recommended
+    if session.persona_mismatch_streak + 1 >= PIVOT_STREAK:
+        return recommended
+    return session.persona
 
 
 def apply_stickiness(session: ArgumentSession, recommended: Persona) -> Persona:

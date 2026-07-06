@@ -17,21 +17,29 @@ _RISK_BADGES = {"safe": "🟢 SAFE", "spicy": "🟠 SPICY", "nuclear": "☢️ N
 # Most of the 15-minute interaction token, not an arbitrary 180s.
 VIEW_TIMEOUT = 840
 
+# Discord embed hard limits.
+_FIELD_VALUE_LIMIT = 1024
+_DESCRIPTION_LIMIT = 4096
+
 Regenerate = Callable[[Persona | None], Awaitable[EngineResult]]
+
+
+def _clamp(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def build_embeds(result: EngineResult) -> list[discord.Embed]:
     embed = discord.Embed(
         title="Win this argument",
-        description=f"*{result.state_digest}*",
+        description=_clamp(f"*{result.state_digest}*", _DESCRIPTION_LIMIT),
         color=discord.Color.red(),
     )
     for i, c in enumerate(result.candidates[:3], start=1):
         badge = _RISK_BADGES.get(c.risk.value, c.risk.value)
-        text = c.text if len(c.text) <= 900 else c.text[:900] + "…"
+        value = _clamp(f"{c.text}\n-# {c.tactic_note}", _FIELD_VALUE_LIMIT)
         embed.add_field(
-            name=f"#{i} · {c.persona.value} · {badge}",
-            value=f"{text}\n-# {c.tactic_note}",
+            name=_clamp(f"#{i} · {c.persona.value} · {badge}", 256),
+            value=value,
             inline=False,
         )
     return [embed]
@@ -48,6 +56,12 @@ class CandidateView(discord.ui.View):
         self.result = result
         self.target_message = target_message
         self.regenerate = regenerate
+        # The ephemeral WebhookMessage this view is attached to; set by the
+        # adapter after followup.send so on_timeout can disable the buttons.
+        self.message: Any | None = None
+        # Each component click runs as its own asyncio task — this flag is the
+        # synchronous double-click guard (checked-and-set before any await).
+        self._working = False
         self._build_items()
 
     def _build_items(self) -> None:
@@ -78,19 +92,32 @@ class CandidateView(discord.ui.View):
         select.callback = self._persona_select(select)
         self.add_item(select)
 
+    def _set_disabled(self, disabled: bool) -> None:
+        for item in self.children:
+            item.disabled = disabled  # type: ignore[attr-defined]
+
     def _make_send(self, index: int):
         async def send(interaction: discord.Interaction) -> None:
-            if index >= len(self.result.candidates):
+            if self._working or self.is_finished() or index >= len(self.result.candidates):
                 await interaction.response.defer()
                 return
+            self._working = True  # synchronous — no await before this line
             candidate = self.result.candidates[index]
-            await sending.send_reply(self.target_message, candidate.text)
-            for item in self.children:
-                item.disabled = True  # type: ignore[attr-defined]
+            # Acknowledge inside the 3-second window BEFORE the slow public
+            # sends, and lock the buttons against a second click.
+            self._set_disabled(True)
+            await interaction.response.edit_message(content="Sending…", view=self)
+            try:
+                await sending.send_reply(self.target_message, candidate.text)
+            except discord.HTTPException:
+                self._working = False
+                self._set_disabled(False)
+                await interaction.edit_original_response(
+                    content="Couldn't send — missing permissions?", view=self
+                )
+                return
             self.stop()
-            await interaction.response.edit_message(
-                content=f"✅ Sent #{index + 1}.", view=self
-            )
+            await interaction.edit_original_response(content=f"✅ Sent #{index + 1}.", view=self)
 
         return send
 
@@ -99,19 +126,28 @@ class CandidateView(discord.ui.View):
             f"**#{i + 1}**\n```text\n{c.text}\n```"
             for i, c in enumerate(self.result.candidates[:3])
         )
-        await interaction.response.send_message(
-            blocks or "No candidates.", ephemeral=True
-        )
+        chunks = sending.split_message(blocks or "No candidates.")
+        await interaction.response.send_message(chunks[0], ephemeral=True)
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=True)
 
     async def _regen(self, interaction: discord.Interaction, forced: Persona | None) -> None:
+        if self._working or self.is_finished():
+            await interaction.response.defer()
+            return
+        self._working = True
         await interaction.response.defer()
+        old_result = self.result
         try:
             self.result = await self.regenerate(forced)
-        except Exception:  # noqa: BLE001 — surface failure in the ephemeral UI
+            self._build_items()
+            await interaction.edit_original_response(embeds=build_embeds(self.result), view=self)
+        except Exception:  # noqa: BLE001 — surface failure, restore the old picker
+            self.result = old_result
+            self._build_items()
             await interaction.followup.send("Couldn't regenerate, try again.", ephemeral=True)
-            return
-        self._build_items()
-        await interaction.edit_original_response(embeds=build_embeds(self.result), view=self)
+        finally:
+            self._working = False
 
     async def _reroll(self, interaction: discord.Interaction) -> None:
         await self._regen(interaction, None)
@@ -123,5 +159,9 @@ class CandidateView(discord.ui.View):
         return on_select
 
     async def on_timeout(self) -> None:
-        for item in self.children:
-            item.disabled = True  # type: ignore[attr-defined]
+        self._set_disabled(True)
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass  # ephemeral message already gone

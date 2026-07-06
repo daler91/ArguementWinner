@@ -32,7 +32,9 @@ async def _suggest(
     forced: Persona | None,
 ) -> None:
     # 3-second rule: defer immediately, always ephemeral + thinking.
-    await interaction.response.defer(ephemeral=True, thinking=True)
+    # (/argue defers before its history scan, so this may already be done.)
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True, thinking=True)
 
     async def regenerate(persona: Persona | None):
         ctx = await translate.build_context(
@@ -60,7 +62,15 @@ async def _suggest(
         return
 
     view = CandidateView(result, target_message, regenerate)
-    await interaction.followup.send(embeds=build_embeds(result), view=view, ephemeral=True)
+    try:
+        view.message = await interaction.followup.send(
+            embeds=build_embeds(result), view=view, ephemeral=True
+        )
+    except discord.HTTPException:
+        log.exception("failed to deliver the candidate picker")
+        await interaction.followup.send(
+            "Generated replies but couldn't render them — try again.", ephemeral=True
+        )
 
 
 def register(bot: ArgumentWinnerBot) -> None:
@@ -83,15 +93,23 @@ def register(bot: ArgumentWinnerBot) -> None:
         interaction: discord.Interaction,
         persona: app_commands.Choice[str] | None = None,
     ) -> None:
+        # The history scan below is network I/O — acknowledge first.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         target: discord.Message | None = None
-        async for m in interaction.channel.history(limit=25):
-            if m.author.id in (interaction.user.id, bot.user.id):
-                continue
-            if translate.annotate_content(m):
-                target = m
-                break
+        try:
+            async for m in interaction.channel.history(limit=25):
+                if m.author.id in (interaction.user.id, bot.user.id):
+                    continue
+                if translate.annotate_content(m):
+                    target = m
+                    break
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "I can't read this channel's history (missing permission).", ephemeral=True
+            )
+            return
         if target is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "No recent opponent message found in this channel.", ephemeral=True
             )
             return

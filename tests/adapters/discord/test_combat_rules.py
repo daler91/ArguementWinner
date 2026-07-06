@@ -6,7 +6,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from argumentwinner.adapters.discord.combat import CombatManager, should_engage
+from argumentwinner.adapters.discord.combat import (
+    CombatManager,
+    is_deliberate_mention,
+    should_engage,
+)
 from argumentwinner.core.models import ArgumentSession, ConversationRef
 
 REF = ConversationRef(platform="discord", guild_id="g", channel_id="c")
@@ -61,6 +65,32 @@ def test_non_opponent_bystander_is_ignored():
 
 def test_no_session_no_mention_is_ignored():
     assert not engage()
+
+
+# ─── deliberate mentions vs reply-pings ──────────────────────────────────────
+
+
+def test_typed_mention_counts():
+    message = SimpleNamespace(content="hey <@999> fight me", role_mentions=[])
+    assert is_deliberate_mention(message, "999")
+
+
+def test_nickname_mention_form_counts():
+    message = SimpleNamespace(content="<@!999> you're wrong", role_mentions=[])
+    assert is_deliberate_mention(message, "999")
+
+
+def test_reply_ping_does_not_count():
+    """A reply to the bot puts it in message.mentions but NOT in the content —
+    it must not reset the reply cap or recruit opponents."""
+    message = SimpleNamespace(content="lol no", role_mentions=[])
+    assert not is_deliberate_mention(message, "999")
+
+
+def test_managed_role_mention_counts():
+    role = SimpleNamespace(id=5)
+    message = SimpleNamespace(content="<@&5> defend yourself", role_mentions=[role])
+    assert is_deliberate_mention(message, "999", self_role=role)
 
 
 # ─── busy set: fail-fast drop, never a queue (guard 5) ───────────────────────
@@ -142,3 +172,88 @@ async def test_double_reply_guard():
     manager._mark_replied(1)
     await manager.process(REF, SimpleNamespace(id=1))
     assert session.replies_sent == 0
+
+
+# ─── stale-session save (the /combat stop resurrection bug) ──────────────────
+
+
+class _Typing:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def full_stub_message():
+    author = SimpleNamespace(id=42, name="opp", display_name="opp", bot=False)
+    channel = SimpleNamespace(id=7, guild=SimpleNamespace(id=1))
+
+    def history(limit):
+        async def gen():
+            yield message  # noqa: B023 — bound below before first iteration
+
+        return gen()
+
+    async def send(text):
+        channel.sent.append(text)
+
+    channel.history = history
+    channel.typing = lambda: _Typing()
+    channel.sent = []
+
+    from datetime import datetime as dt
+
+    message = SimpleNamespace(
+        id=1,
+        author=author,
+        content="you are wrong",
+        attachments=[],
+        embeds=[],
+        stickers=[],
+        channel=channel,
+        created_at=dt(2026, 7, 6, tzinfo=UTC),
+        replies=[],
+    )
+
+    async def reply(text):
+        message.replies.append(text)
+
+    message.reply = reply
+    return message
+
+
+class VanishingStore(RecordingStore):
+    """Returns the session on the first get (guards), None afterwards —
+    simulating /combat stop landing while the reply was generating."""
+
+    async def get(self, ref):
+        self.get_calls += 1
+        if self.get_calls > 1:
+            return None
+        return self.session
+
+
+async def test_stop_mid_generation_is_not_resurrected():
+    from argumentwinner.core.models import CandidateResponse, Persona, Risk
+
+    session = session_with("42")
+    store = VanishingStore(session)
+    manager = make_manager(store)
+    manager.bot.user.name = "bot"
+    manager.bot.user.display_name = "bot"
+
+    async def combat_reply(ctx, sess=None):
+        return CandidateResponse(
+            text="reply", persona=Persona.LOGICIAN, tactic_note="t", risk=Risk.SAFE
+        )
+
+    manager.app.engine = SimpleNamespace(combat_reply=combat_reply)
+    saved_before = store.session
+    message = full_stub_message()
+
+    await manager.process(REF, message)
+
+    assert message.replies == ["reply"]  # reply was already in flight: it sends
+    assert store.session is saved_before  # ...but the dead session is NOT re-saved
+    assert saved_before.replies_sent == 0

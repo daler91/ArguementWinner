@@ -77,6 +77,15 @@ class AnthropicProvider:
                 tools=[tool],
                 tool_choice={"type": "tool", "name": _EMIT_TOOL},
             )
+            stop_reason = getattr(response, "stop_reason", None)
+            if stop_reason == "max_tokens":
+                # An identical retry would truncate identically — fail now
+                # with an actionable message instead.
+                raise StructuredOutputError(
+                    f"output truncated at max_tokens={request.max_tokens} — raise max_tokens"
+                )
+            if stop_reason == "refusal":
+                raise StructuredOutputError("the model refused this request")
             tool_use = next((b for b in response.content if b.type == "tool_use"), None)
             if tool_use is None:
                 last_error = StructuredOutputError("model returned no tool_use block")

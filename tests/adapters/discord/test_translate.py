@@ -68,20 +68,22 @@ def test_role_tagging_rules():
 
 
 def test_channel_ref():
-    channel = SimpleNamespace(id=100, guild=SimpleNamespace(id=7), parent=None)
+    channel = SimpleNamespace(id=100, guild=SimpleNamespace(id=7))
     ref = ref_for_channel(channel)
     assert (ref.guild_id, ref.channel_id, ref.thread_id) == ("7", "100", None)
 
 
 def test_thread_ref_scopes_separately_from_parent():
     guild = SimpleNamespace(id=7)
-    parent = SimpleNamespace(id=100, guild=guild, parent=None)
-    thread = SimpleNamespace(id=200, guild=guild, parent=parent)
+    parent = SimpleNamespace(id=100, guild=guild)
+    # threads are detected via parent_id — always populated, unlike the
+    # cache-dependent .parent property
+    thread = SimpleNamespace(id=200, guild=guild, parent_id=100)
     assert ref_for_channel(thread) != ref_for_channel(parent)
     assert ref_for_channel(thread).thread_id == "200"
     assert ref_for_channel(thread).channel_id == "100"
 
 
 def test_dm_ref_has_no_guild():
-    dm = SimpleNamespace(id=300, guild=None, parent=None)
+    dm = SimpleNamespace(id=300, guild=None)
     assert ref_for_channel(dm).guild_id is None

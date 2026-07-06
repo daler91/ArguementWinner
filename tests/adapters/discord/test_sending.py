@@ -35,3 +35,18 @@ def test_split_chunks_all_fit_and_lose_nothing_material():
     rejoined = " ".join(chunks)
     assert "Sentence number 0" in rejoined
     assert "Sentence number 199" in rejoined
+
+
+def test_split_loses_zero_characters_on_the_hard_slice_path():
+    """The '…' continuation marker is display-only: reassembling the chunks
+    (markers stripped) must reproduce the original text exactly."""
+    text = "y" * 5000
+    chunks = split_message(text, 100)
+    assert "".join(c.rstrip("…") for c in chunks) == text
+
+
+def test_split_loses_zero_words_on_the_word_boundary_path():
+    words = [f"w{i}" for i in range(1000)]
+    chunks = split_message(" ".join(words), 80)
+    reassembled = " ".join(c.rstrip("…").strip() for c in chunks).split()
+    assert reassembled == words

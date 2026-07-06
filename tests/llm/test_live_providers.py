@@ -51,6 +51,8 @@ async def test_analyzer_model_is_structured_output_proficient():
     analyzer = os.environ.get("AW_MODEL_ANALYZER")
     if not analyzer:
         pytest.skip("AW_MODEL_ANALYZER not set")
+    if os.environ.get("AW_LLM_PROVIDER", "anthropic") != "anthropic":
+        pytest.skip("analyzer golden currently only wired for the anthropic provider")
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
     from argumentwinner.llm.anthropic_provider import AnthropicProvider

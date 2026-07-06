@@ -40,8 +40,12 @@ def render_transcript(turns: tuple[ArgumentTurn, ...], max_chars: int = 6000) ->
     lines = [
         f"[{_ROLE_LABELS[t.role]}] {t.author.display_name}: {t.content}" for t in turns
     ]
-    while lines and sum(len(line) + 1 for line in lines) > max_chars:
+    while len(lines) > 1 and sum(len(line) + 1 for line in lines) > max_chars:
         lines.pop(0)
+    if lines and len(lines[0]) > max_chars:
+        # A single oversized line is clamped (keeping its tail, the newest
+        # words), never dropped — dropping it would erase the whole transcript.
+        lines[0] = "…" + lines[0][-(max_chars - 1) :]
     return "\n".join(lines) if lines else "(no prior messages)"
 
 
@@ -98,7 +102,7 @@ _SPICE_RULES: dict[SpiceLevel, str] = {
 }
 
 
-def generation_system(spice: SpiceLevel) -> str:
+def generation_system(spice: SpiceLevel, max_reply_chars: int = 1800) -> str:
     return (
         "You are the reply stage of an argument-winning engine. You write replies "
         "that WIN the argument — for the crowd and on the merits.\n"
@@ -115,7 +119,7 @@ def generation_system(spice: SpiceLevel) -> str:
         "- Attack the argument, never protected characteristics.\n"
         "- Plain chat register: no headers, no bullet lists, no 'Firstly'. It must "
         "read like a person typing in the channel.\n"
-        "- Keep each candidate under 1800 characters.\n"
+        f"- Keep each candidate under {max_reply_chars} characters.\n"
         f"\n{_SPICE_RULES[spice]}"
     )
 
@@ -162,11 +166,16 @@ def generation_user(
             "first. This is live combat: each must be a single punchy message, "
             "distinctly different tactics.",
         ]
+    elif n == 1:
+        parts += [
+            "",
+            f"## Task\nWrite 1 candidate reply in the {primary.value} persona.",
+        ]
     else:
         parts += [
             "",
             f"## Task\nWrite {n} candidate replies, best first: "
-            f"{max(n - 1, 1)} in the {primary.value} persona using distinct tactics, "
+            f"{n - 1} in the {primary.value} persona using distinct tactics, "
             f"and 1 in the {runner_up.value} persona. Span the allowed risk tiers "
             "(at least one safe).",
         ]

@@ -60,3 +60,11 @@ class TestInMemorySessionStore(SessionStoreContract):
         await store.save(session)
         session.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         assert await store.get(REF) is None
+
+    async def test_save_sweeps_expired_sessions_for_refs_never_queried_again(self):
+        store = InMemorySessionStore(ttl_minutes=60)
+        stale = ArgumentSession(ref=REF)
+        await store.save(stale)
+        stale.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await store.save(ArgumentSession(ref=OTHER_REF))  # unrelated save sweeps
+        assert REF not in store._sessions  # no leak for never-again-queried refs

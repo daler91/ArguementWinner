@@ -55,6 +55,20 @@ class OpenAICompatibleProvider:
         self.model = model
         self._client = client or AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._json_schema_supported = True
+        # Newer OpenAI chat models reject `max_tokens` in favor of
+        # `max_completion_tokens`; Ollama's /v1 shim only knows `max_tokens`.
+        self._max_tokens_param = "max_tokens" if name == "ollama" else "max_completion_tokens"
+
+    async def _chat(self, **kwargs):
+        try:
+            return await self._client.chat.completions.create(**kwargs)
+        except openai.BadRequestError as exc:
+            # Reasoning-family models reject non-default temperature —
+            # retry once without it rather than failing the reply.
+            if "temperature" in str(exc).lower() and "temperature" in kwargs:
+                kwargs.pop("temperature")
+                return await self._client.chat.completions.create(**kwargs)
+            raise
 
     def _messages(self, request: LLMRequest, system_suffix: str = "") -> list[dict[str, str]]:
         msgs: list[dict[str, str]] = [
@@ -64,11 +78,11 @@ class OpenAICompatibleProvider:
         return msgs
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        response = await self._client.chat.completions.create(
+        response = await self._chat(
             model=self.model,
             messages=self._messages(request),
-            max_tokens=request.max_tokens,
             temperature=request.temperature,
+            **{self._max_tokens_param: request.max_tokens},
         )
         usage = response.usage
         return LLMResponse(
@@ -86,13 +100,16 @@ class OpenAICompatibleProvider:
             + json.dumps(schema.model_json_schema())
         )
         messages = self._messages(request, system_suffix=schema_note) + extra_messages
+        common = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": request.temperature,
+            self._max_tokens_param: request.max_tokens,
+        }
         if self._json_schema_supported:
             try:
-                response = await self._client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
+                response = await self._chat(
+                    **common,
                     response_format={
                         "type": "json_schema",
                         "json_schema": {
@@ -102,17 +119,15 @@ class OpenAICompatibleProvider:
                     },
                 )
                 return response.choices[0].message.content or ""
-            except openai.BadRequestError:
-                # Endpoint (e.g. an older Ollama) rejects json_schema —
-                # degrade to json_object + schema-in-prompt from now on.
+            except openai.BadRequestError as exc:
+                # Degrade to json_object + schema-in-prompt only when the
+                # endpoint actually rejected the response_format (e.g. an
+                # older Ollama) — any other 400 is a real error.
+                text = str(exc).lower()
+                if "response_format" not in text and "json_schema" not in text:
+                    raise
                 self._json_schema_supported = False
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            response_format={"type": "json_object"},
-        )
+        response = await self._chat(**common, response_format={"type": "json_object"})
         return response.choices[0].message.content or ""
 
     async def complete_structured(self, request: LLMRequest, schema: type[T]) -> T:

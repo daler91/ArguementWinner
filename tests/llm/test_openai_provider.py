@@ -93,3 +93,37 @@ async def test_complete_returns_text_and_usage():
     response = await provider.complete(REQUEST)
     assert response.text == "plain answer"
     assert response.input_tokens == 10
+
+
+async def test_openai_sends_max_completion_tokens_but_ollama_sends_max_tokens():
+    provider, stub = make_provider([_response("x")])
+    await provider.complete(REQUEST)
+    assert "max_completion_tokens" in stub.calls[0]
+    assert "max_tokens" not in stub.calls[0]
+
+    ollama_stub = StubClient([_response("x")])
+    ollama = OpenAICompatibleProvider(model="llama3.1", name="ollama", client=ollama_stub)
+    await ollama.complete(REQUEST)
+    assert "max_tokens" in ollama_stub.calls[0]
+
+
+async def test_temperature_rejection_retries_without_it():
+    request = httpx.Request("POST", "http://stub")
+    err = openai.BadRequestError(
+        "Unsupported value: 'temperature'", response=httpx.Response(400, request=request), body=None
+    )
+    provider, stub = make_provider([err, _response("ok")])
+    response = await provider.complete(REQUEST)
+    assert response.text == "ok"
+    assert "temperature" not in stub.calls[1]
+
+
+async def test_unrelated_bad_request_does_not_degrade_json_schema_mode():
+    request = httpx.Request("POST", "http://stub")
+    err = openai.BadRequestError(
+        "context length exceeded", response=httpx.Response(400, request=request), body=None
+    )
+    provider, _ = make_provider([err])
+    with pytest.raises(openai.BadRequestError):
+        await provider.complete_structured(REQUEST, Analysis)
+    assert provider._json_schema_supported  # not misclassified as unsupported

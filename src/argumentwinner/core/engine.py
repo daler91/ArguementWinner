@@ -37,7 +37,10 @@ class ArgumentEngine:
         self._llm = llm
         self._settings = settings
 
-    async def _analyze(self, ctx: ArgumentContext) -> Analysis:
+    async def _analyze(self, ctx: ArgumentContext) -> tuple[Analysis, bool]:
+        """Returns (analysis, degraded). A degraded analysis (parse failure →
+        Analysis.fallback()) still produces a reply, but must never feed the
+        persona stickiness state machine as if it were a genuine read."""
         request = LLMRequest(
             system=prompts.ANALYSIS_SYSTEM,
             messages=(ChatMessage(role="user", content=prompts.analysis_user(ctx)),),
@@ -46,9 +49,9 @@ class ArgumentEngine:
             role_hint="analysis",
         )
         try:
-            return await self._llm.complete_structured(request, Analysis)
+            return await self._llm.complete_structured(request, Analysis), False
         except StructuredOutputError:
-            return Analysis.fallback()
+            return Analysis.fallback(), True
 
     async def _generate(
         self,
@@ -60,7 +63,7 @@ class ArgumentEngine:
         combat: bool,
     ) -> tuple[CandidateResponse, ...]:
         request = LLMRequest(
-            system=prompts.generation_system(self._settings.spice),
+            system=prompts.generation_system(self._settings.spice, self._settings.max_reply_chars),
             messages=(
                 ChatMessage(
                     role="user",
@@ -92,7 +95,7 @@ class ArgumentEngine:
         """Suggestion mode: return ranked candidates for the user to pick from.
         Stateless — context comes entirely from the adapter's fresh fetch."""
         n = n or self._settings.suggest_candidates
-        analysis = await self._analyze(ctx)
+        analysis, _degraded = await self._analyze(ctx)
         primary, runner_up = strategy.select_personas(
             analysis, ctx.forced_persona, self._settings.spice
         )
@@ -108,16 +111,39 @@ class ArgumentEngine:
     ) -> CandidateResponse:
         """Auto-combat mode: one reply, persona sticky per session (the session
         is mutated; the adapter owns saving it and all send bookkeeping)."""
-        analysis = await self._analyze(ctx)
+        analysis, degraded = await self._analyze(ctx)
         recommended, _ = strategy.select_personas(
             analysis, ctx.forced_persona, self._settings.spice
         )
-        if session is not None and (ctx.forced_persona in (None, Persona.AUTO)):
-            primary = strategy.apply_stickiness(session, recommended)
+        # Stickiness applies only to genuine analyses on unforced sessions —
+        # and is committed only after generation succeeds, so neither a parse
+        # failure nor a failed generation can advance the streak.
+        sticky = (
+            session is not None
+            and ctx.forced_persona in (None, Persona.AUTO)
+            and not degraded
+        )
+        if sticky:
+            primary = strategy.peek_stickiness(session, recommended)
+        elif (
+            degraded
+            and session is not None
+            and session.persona is not Persona.AUTO
+            and ctx.forced_persona in (None, Persona.AUTO)
+        ):
+            # Degraded analysis on an unforced session: keep the current voice.
+            primary = session.persona
         else:
             primary = recommended
         runner_up = strategy.COMPLEMENT[primary]
         candidates = await self._generate(ctx, analysis, primary, runner_up, 2, combat=True)
-        if not candidates:
-            raise StructuredOutputError("generation produced no usable candidates")
-        return candidates[0]
+        # Combat posts publicly with no human in the loop: the spice cap is a
+        # hard filter here, not just a ranking demotion. Skipping a reply beats
+        # posting one the operator forbade.
+        allowed = strategy.ALLOWED_RISKS[self._settings.spice]
+        usable = [c for c in candidates if c.risk in allowed]
+        if not usable:
+            raise StructuredOutputError("no candidates within the configured spice cap")
+        if sticky:
+            strategy.apply_stickiness(session, recommended)
+        return usable[0]

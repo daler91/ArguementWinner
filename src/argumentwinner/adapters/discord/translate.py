@@ -57,14 +57,18 @@ def to_participant(user: Any) -> Participant:
 
 
 def ref_for_channel(channel: Any) -> ConversationRef:
-    """Threads and their parent channel are DIFFERENT arguments."""
+    """Threads and their parent channel are DIFFERENT arguments.
+
+    Threads are detected via `parent_id` (always populated on discord.Thread),
+    not the cache-dependent `.parent` property — a cache miss must not yield a
+    different ref for the same thread."""
     guild = getattr(channel, "guild", None)
-    parent = getattr(channel, "parent", None)
-    if parent is not None:  # discord.Thread
+    parent_id = getattr(channel, "parent_id", None)
+    if parent_id is not None:  # discord.Thread
         return ConversationRef(
             platform=PLATFORM,
             guild_id=str(guild.id) if guild else None,
-            channel_id=str(parent.id),
+            channel_id=str(parent_id),
             thread_id=str(channel.id),
         )
     return ConversationRef(
@@ -119,7 +123,9 @@ async def build_context(
     raw = [m async for m in channel.history(limit=history_limit)]
     raw.reverse()  # discord returns newest first; the engine wants oldest first
     if not any(m.id == target_message.id for m in raw):
-        raw.append(target_message)
+        # A target absent from the window predates it — prepend, never append,
+        # or the oldest message would masquerade as the newest turn.
+        raw.insert(0, target_message)
 
     turns: list[ArgumentTurn] = []
     for m in raw:

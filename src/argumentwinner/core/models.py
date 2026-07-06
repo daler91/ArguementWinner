@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Role(StrEnum):
@@ -139,6 +139,13 @@ class GeneratedCandidate(BaseModel):
         )
     )
     risk: Risk = Field(description="How inflammatory the reply is: safe, spicy or nuclear")
+
+    @field_validator("persona")
+    @classmethod
+    def _no_auto(cls, v: Persona) -> Persona:
+        # AUTO is a request-side sentinel, not a writing style — an LLM that
+        # emits it must not leak "auto" into the UI or strategy tables.
+        return Persona.LOGICIAN if v is Persona.AUTO else v
 
 
 class GenerationBatch(BaseModel):

@@ -64,6 +64,17 @@ def should_engage(
     return session is not None and author_id in session.opponent_ids
 
 
+def is_deliberate_mention(message: Any, bot_id: str, self_role: Any = None) -> bool:
+    """A typed @mention (or a ping of the bot's managed role) — NOT a
+    reply-ping. message.mentions includes reply-pings, so trusting it would
+    let every opponent reply reset the runaway-guard reply cap."""
+    content = message.content or ""
+    if f"<@{bot_id}>" in content or f"<@!{bot_id}>" in content:
+        return True
+    role_mentions = getattr(message, "role_mentions", None) or []
+    return self_role is not None and self_role in role_mentions
+
+
 class CombatManager:
     def __init__(self, bot: ArgumentWinnerBot) -> None:
         self.bot = bot
@@ -79,7 +90,9 @@ class CombatManager:
 
     def register(self, tree: app_commands.CommandTree) -> None:
         group = app_commands.Group(
-            name="combat", description="Let the bot argue on its own in this channel"
+            name="combat",
+            description="Let the bot argue on its own in this channel",
+            guild_only=True,  # the Member opponent option can't resolve in DMs
         )
 
         @group.command(name="start", description="Start auto-combat here")
@@ -121,7 +134,10 @@ class CombatManager:
             return
         ref = translate.ref_for_channel(message.channel)
         session = await self.app.store.get(ref)
-        mentions_bot = any(u.id == self.bot.user.id for u in message.mentions)
+        guild = getattr(message, "guild", None)
+        mentions_bot = is_deliberate_mention(
+            message, str(self.bot.user.id), getattr(guild, "self_role", None)
+        )
 
         if not should_engage(
             author_id=str(message.author.id),
@@ -201,9 +217,15 @@ class CombatManager:
 
             await sending.send_reply(message, candidate.text)
             self._mark_replied(message.id)
-            session.replies_sent += 1
-            session.last_reply_at = datetime.now(UTC)
-            await self.app.store.save(session)
+            # Re-fetch before saving: /combat stop mid-generation must not be
+            # resurrected by a blind save of the stale object, and a /combat
+            # start that replaced the config mid-generation must win.
+            current = await self.app.store.get(ref)
+            if current is None:
+                return
+            current.replies_sent += 1
+            current.last_reply_at = datetime.now(UTC)
+            await self.app.store.save(current)
         finally:
             self._busy.discard(ref)
 

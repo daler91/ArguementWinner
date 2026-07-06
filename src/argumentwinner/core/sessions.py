@@ -28,7 +28,15 @@ class InMemorySessionStore:
         return session
 
     async def save(self, session: ArgumentSession) -> None:
-        session.expires_at = self._now() + self._ttl
+        now = self._now()
+        # Opportunistic sweep: refs that are never queried again must not
+        # leak forever (get() only evicts the ref it is asked about).
+        self._sessions = {
+            ref: s
+            for ref, s in self._sessions.items()
+            if s.expires_at is None or s.expires_at > now
+        }
+        session.expires_at = now + self._ttl
         self._sessions[session.ref] = session
 
     async def delete(self, ref: ConversationRef) -> None:
