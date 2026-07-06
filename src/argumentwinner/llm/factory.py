@@ -20,6 +20,7 @@ from .openai_provider import (
     DEFAULT_OPENAI_MODEL,
     OpenAICompatibleProvider,
 )
+from .usage import UsageMeter
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -42,25 +43,32 @@ class RoleRouter:
         return await self._pick(request).complete_structured(request, schema)
 
 
-def _build_single(settings: Settings, model: str) -> LLMProvider:
+def _build_single(settings: Settings, model: str, meter: UsageMeter | None) -> LLMProvider:
     provider = settings.aw_llm_provider
     if provider == "fake":
-        return FakeLLMProvider()
+        return FakeLLMProvider(meter=meter)
     if provider == "anthropic":
         if settings.anthropic_api_key is None:
             raise RuntimeError("AW_LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set")
         return AnthropicProvider(
-            model=model, api_key=settings.anthropic_api_key.get_secret_value()
+            model=model, api_key=settings.anthropic_api_key.get_secret_value(), meter=meter
         )
     if provider == "openai":
         if settings.openai_api_key is None:
             raise RuntimeError("AW_LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
         return OpenAICompatibleProvider(
-            model=model, api_key=settings.openai_api_key.get_secret_value(), name="openai"
+            model=model,
+            api_key=settings.openai_api_key.get_secret_value(),
+            name="openai",
+            meter=meter,
         )
     if provider == "ollama":
         return OpenAICompatibleProvider(
-            model=model, api_key="ollama", base_url=settings.aw_ollama_base_url, name="ollama"
+            model=model,
+            api_key="ollama",
+            base_url=settings.aw_ollama_base_url,
+            name="ollama",
+            meter=meter,
         )
     raise RuntimeError(f"Unknown AW_LLM_PROVIDER: {provider!r}")
 
@@ -74,10 +82,11 @@ def default_model(settings: Settings) -> str:
     }[settings.aw_llm_provider]
 
 
-def build_provider(settings: Settings) -> LLMProvider:
+def build_provider(settings: Settings, meter: UsageMeter | None = None) -> LLMProvider:
     model = settings.aw_llm_model or default_model(settings)
-    provider = _build_single(settings, model)
+    provider = _build_single(settings, model, meter)
     if settings.aw_model_analyzer and settings.aw_llm_provider != "fake":
-        analyzer = _build_single(settings, settings.aw_model_analyzer)
+        # Both leaves share the one meter; the router itself never records.
+        analyzer = _build_single(settings, settings.aw_model_analyzer, meter)
         return RoleRouter(generation=provider, analysis=analyzer)
     return provider

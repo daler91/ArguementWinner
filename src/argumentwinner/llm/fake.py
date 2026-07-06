@@ -21,21 +21,44 @@ from argumentwinner.core.models import (
 )
 from argumentwinner.core.ports import LLMRequest, LLMResponse, StructuredOutputError
 
+from .usage import UsageEvent, UsageMeter
+
 T = TypeVar("T", bound=BaseModel)
 
 
 class FakeLLMProvider:
     name = "fake"
 
-    def __init__(self, queue: list[BaseModel | str | Exception] | None = None) -> None:
+    def __init__(
+        self,
+        queue: list[BaseModel | str | Exception] | None = None,
+        meter: UsageMeter | None = None,
+    ) -> None:
         self.queue: list[BaseModel | str | Exception] = list(queue or [])
         self.requests: list[LLMRequest] = []
+        self._meter = meter
+
+    def _record(self, request: LLMRequest) -> None:
+        # Zero-token events: the call count is still useful (e.g. the REPL's
+        # /usage against AW_LLM_PROVIDER=fake), and recording BEFORE a queued
+        # exception raises mirrors real providers metering failed roundtrips.
+        if self._meter is not None:
+            self._meter.record(
+                UsageEvent(
+                    provider=self.name,
+                    model="fake",
+                    role_hint=request.role_hint,
+                    input_tokens=0,
+                    output_tokens=0,
+                )
+            )
 
     def _pop(self) -> BaseModel | str | Exception | None:
         return self.queue.pop(0) if self.queue else None
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
+        self._record(request)
         item = self._pop()
         if isinstance(item, Exception):
             raise item
@@ -44,6 +67,7 @@ class FakeLLMProvider:
 
     async def complete_structured(self, request: LLMRequest, schema: type[T]) -> T:
         self.requests.append(request)
+        self._record(request)
         item = self._pop()
         if isinstance(item, Exception):
             raise item

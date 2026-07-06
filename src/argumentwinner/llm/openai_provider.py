@@ -25,6 +25,8 @@ from argumentwinner.core.ports import (
     StructuredOutputError,
 )
 
+from .usage import UsageEvent, UsageMeter
+
 T = TypeVar("T", bound=BaseModel)
 
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -50,14 +52,30 @@ class OpenAICompatibleProvider:
         base_url: str | None = None,
         name: str = "openai",
         client: Any | None = None,
+        meter: UsageMeter | None = None,
     ) -> None:
         self.name = name
         self.model = model
         self._client = client or AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._meter = meter
         self._json_schema_supported = True
         # Newer OpenAI chat models reject `max_tokens` in favor of
         # `max_completion_tokens`; Ollama's /v1 shim only knows `max_tokens`.
         self._max_tokens_param = "max_tokens" if name == "ollama" else "max_completion_tokens"
+
+    def _record(self, request: LLMRequest, response: Any) -> None:
+        if self._meter is None:
+            return
+        usage = getattr(response, "usage", None)
+        self._meter.record(
+            UsageEvent(
+                provider=self.name,
+                model=getattr(response, "model", None) or self.model,
+                role_hint=request.role_hint,
+                input_tokens=(usage.prompt_tokens if usage else 0) or 0,
+                output_tokens=(usage.completion_tokens if usage else 0) or 0,
+            )
+        )
 
     async def _chat(self, **kwargs):
         try:
@@ -84,6 +102,7 @@ class OpenAICompatibleProvider:
             temperature=request.temperature,
             **{self._max_tokens_param: request.max_tokens},
         )
+        self._record(request, response)
         usage = response.usage
         return LLMResponse(
             text=response.choices[0].message.content or "",
@@ -118,6 +137,7 @@ class OpenAICompatibleProvider:
                         },
                     },
                 )
+                self._record(request, response)
                 return response.choices[0].message.content or ""
             except openai.BadRequestError as exc:
                 # Degrade to json_object + schema-in-prompt only when the
@@ -128,6 +148,7 @@ class OpenAICompatibleProvider:
                     raise
                 self._json_schema_supported = False
         response = await self._chat(**common, response_format={"type": "json_object"})
+        self._record(request, response)
         return response.choices[0].message.content or ""
 
     async def complete_structured(self, request: LLMRequest, schema: type[T]) -> T:

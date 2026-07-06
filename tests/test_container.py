@@ -7,6 +7,8 @@ import pytest
 
 from argumentwinner.config import Settings
 from argumentwinner.container import build_app
+from argumentwinner.core.sessions import InMemorySessionStore
+from argumentwinner.storage.sqlite_store import SqliteSessionStore
 
 VOICE_MD = """\
 ## Style notes
@@ -49,3 +51,34 @@ def test_empty_voice_profile_file_fails_fast(tmp_path):
     path.write_text("## Samples\n\n")  # parses to an empty profile
     with pytest.raises(RuntimeError, match="empty profile"):
         build_app(settings(aw_voice_profile=str(path)))
+
+
+def test_app_meter_is_shared_with_the_provider():
+    app = build_app(settings())
+    assert app.provider._meter is app.meter
+
+
+def test_custom_price_table_reaches_the_meter(tmp_path):
+    path = tmp_path / "prices.json"
+    path.write_text(
+        '{"updated": "2030-01-01", "prices": '
+        '[{"prefix": "m", "input_per_mtok": 1.0, "output_per_mtok": 2.0}]}'
+    )
+    app = build_app(settings(aw_price_table=str(path)))
+    assert app.meter.prices.updated == "2030-01-01"
+
+
+def test_missing_price_table_fails_fast(tmp_path):
+    with pytest.raises(RuntimeError, match="AW_PRICE_TABLE"):
+        build_app(settings(aw_price_table=str(tmp_path / "nope.json")))
+
+
+def test_default_store_is_memory():
+    assert isinstance(build_app(settings()).store, InMemorySessionStore)
+
+
+def test_sqlite_store_selected_by_env(tmp_path):
+    app = build_app(
+        settings(aw_session_store="sqlite", aw_sqlite_path=str(tmp_path / "aw.db"))
+    )
+    assert isinstance(app.store, SqliteSessionStore)

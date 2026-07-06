@@ -151,6 +151,30 @@ Everything is env vars (or a git-ignored `.env`) — see [.env.example](.env.exa
 for the full annotated list. LLM backends: `anthropic` (default), `openai`,
 `ollama` (any OpenAI-compatible endpoint), or `fake` (offline, deterministic).
 
+**Session persistence:** by default combat sessions live in memory and a
+restart forgets every active argument. Set `AW_SESSION_STORE=sqlite` (and
+optionally `AW_SQLITE_PATH`) to survive restarts. Sessions are control state
+only — no conversation content is ever written to disk.
+
+## Usage & cost tracking
+
+Every LLM roundtrip (retries included) is metered per provider/model. In the
+REPL, `/usage` prints token counts and an **estimated** cost.
+
+Prices are data, not code — the bundled table ships in
+`src/argumentwinner/llm/prices.json`. To update prices or add models, either
+edit a copy of that JSON, or regenerate one automatically from the
+community-maintained [LiteLLM price table](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json):
+
+```bash
+python -m argumentwinner.llm.prices --refresh --out aw_prices.json
+export AW_PRICE_TABLE=aw_prices.json
+```
+
+Match precedence is longest-prefix-first automatically, so an entry for
+`gpt-4o-mini` always beats `gpt-4o` no matter how the file is ordered.
+Unknown models still get token counts — just no dollar estimate.
+
 ## Architecture
 
 ```
@@ -165,7 +189,9 @@ src/argumentwinner/
 │   ├── prompts.py       every prompt template (golden-file tested)
 │   ├── ranking.py       candidate ordering sanity pass
 │   └── sessions.py      combat session control-state + in-memory store
-├── llm/                 anthropic / openai+ollama / fake backends, RoleRouter
+├── llm/                 anthropic / openai+ollama / fake backends, RoleRouter,
+│                        usage metering + data-driven price table
+├── storage/             sqlite session store (AW_SESSION_STORE=sqlite)
 └── adapters/
     ├── common.py        pure cross-platform helpers (text splitting, engagement rules)
     ├── discord/         translate, suggestion UI, auto-combat, sending

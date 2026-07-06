@@ -23,6 +23,8 @@ from argumentwinner.core.ports import (
     StructuredOutputError,
 )
 
+from .usage import UsageEvent, UsageMeter
+
 T = TypeVar("T", bound=BaseModel)
 
 DEFAULT_MODEL = "claude-opus-4-8"
@@ -41,9 +43,25 @@ class AnthropicProvider:
         model: str = DEFAULT_MODEL,
         api_key: str | None = None,
         client: Any | None = None,
+        meter: UsageMeter | None = None,
     ) -> None:
         self.model = model
         self._client = client or AsyncAnthropic(api_key=api_key)
+        self._meter = meter
+
+    def _record(self, request: LLMRequest, response: Any) -> None:
+        if self._meter is None:
+            return
+        usage = getattr(response, "usage", None)
+        self._meter.record(
+            UsageEvent(
+                provider=self.name,
+                model=getattr(response, "model", None) or self.model,
+                role_hint=request.role_hint,
+                input_tokens=getattr(usage, "input_tokens", 0) or 0,
+                output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            )
+        )
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         response = await self._client.messages.create(
@@ -52,6 +70,7 @@ class AnthropicProvider:
             messages=_to_messages(request.messages),
             max_tokens=request.max_tokens,
         )
+        self._record(request, response)
         text = "".join(b.text for b in response.content if b.type == "text")
         return LLMResponse(
             text=text,
@@ -77,6 +96,9 @@ class AnthropicProvider:
                 tools=[tool],
                 tool_choice={"type": "tool", "name": _EMIT_TOOL},
             )
+            # Record before the stop_reason checks: truncation/refusal was
+            # still real spend.
+            self._record(request, response)
             stop_reason = getattr(response, "stop_reason", None)
             if stop_reason == "max_tokens":
                 # An identical retry would truncate identically — fail now

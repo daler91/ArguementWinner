@@ -12,6 +12,7 @@ import pytest
 from argumentwinner.core.models import Analysis
 from argumentwinner.core.ports import ChatMessage, LLMRequest, StructuredOutputError
 from argumentwinner.llm.openai_provider import OpenAICompatibleProvider, _strip_fences
+from argumentwinner.llm.usage import UsageMeter
 from tests.conftest import make_analysis
 
 REQUEST = LLMRequest(system="sys", messages=(ChatMessage(role="user", content="analyze"),))
@@ -46,9 +47,11 @@ class StubClient:
         return result
 
 
-def make_provider(results: list) -> tuple[OpenAICompatibleProvider, StubClient]:
+def make_provider(
+    results: list, meter: UsageMeter | None = None
+) -> tuple[OpenAICompatibleProvider, StubClient]:
     stub = StubClient(results)
-    return OpenAICompatibleProvider(model="stub-model", client=stub), stub
+    return OpenAICompatibleProvider(model="stub-model", client=stub, meter=meter), stub
 
 
 def test_strip_fences():
@@ -127,3 +130,40 @@ async def test_unrelated_bad_request_does_not_degrade_json_schema_mode():
     with pytest.raises(openai.BadRequestError):
         await provider.complete_structured(REQUEST, Analysis)
     assert provider._json_schema_supported  # not misclassified as unsupported
+
+
+# ─── metering: one UsageEvent per API roundtrip ───────────────────────────────
+
+
+async def test_meter_records_one_event_on_complete():
+    meter = UsageMeter()
+    provider, _ = make_provider([_response("plain answer")], meter=meter)
+    await provider.complete(REQUEST)
+    assert meter.snapshot()[("openai", "stub-model")] == (1, 10, 5)
+
+
+async def test_meter_records_both_roundtrips_on_parse_retry():
+    meter = UsageMeter()
+    provider, _ = make_provider([_response("{truncated"), _response(VALID_JSON)], meter=meter)
+    await provider.complete_structured(REQUEST, Analysis)
+    assert meter.snapshot()[("openai", "stub-model")] == (2, 20, 10)
+
+
+async def test_meter_records_once_on_schema_degrade():
+    # The rejected json_schema attempt yields no response — nothing to meter;
+    # only the successful json_object roundtrip counts.
+    meter = UsageMeter()
+    provider, _ = make_provider([_bad_request(), _response(VALID_JSON)], meter=meter)
+    await provider.complete_structured(REQUEST, Analysis)
+    assert meter.snapshot()[("openai", "stub-model")] == (1, 10, 5)
+
+
+async def test_meter_records_once_on_temperature_retry():
+    request = httpx.Request("POST", "http://stub")
+    err = openai.BadRequestError(
+        "Unsupported value: 'temperature'", response=httpx.Response(400, request=request), body=None
+    )
+    meter = UsageMeter()
+    provider, _ = make_provider([err, _response("ok")], meter=meter)
+    await provider.complete(REQUEST)
+    assert meter.snapshot()[("openai", "stub-model")] == (1, 10, 5)

@@ -3,7 +3,7 @@ The only module allowed to import adapters."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from argumentwinner.config import Settings
@@ -13,6 +13,9 @@ from argumentwinner.core.ports import LLMProvider, SessionStore
 from argumentwinner.core.sessions import InMemorySessionStore
 from argumentwinner.core.voice import parse_voice_profile
 from argumentwinner.llm.factory import build_provider
+from argumentwinner.llm.prices import load_price_table
+from argumentwinner.llm.usage import UsageMeter
+from argumentwinner.storage.sqlite_store import SqliteSessionStore
 
 
 @dataclass
@@ -22,6 +25,7 @@ class App:
     store: SessionStore
     engine: ArgumentEngine
     voice: VoiceProfile | None = None
+    meter: UsageMeter = field(default_factory=UsageMeter)
 
 
 def _load_voice_profile(settings: Settings) -> VoiceProfile | None:
@@ -43,10 +47,19 @@ def _load_voice_profile(settings: Settings) -> VoiceProfile | None:
     return profile
 
 
+def _build_store(settings: Settings) -> SessionStore:
+    if settings.aw_session_store == "sqlite":
+        return SqliteSessionStore(
+            settings.aw_sqlite_path, ttl_minutes=settings.aw_session_ttl_minutes
+        )
+    return InMemorySessionStore(ttl_minutes=settings.aw_session_ttl_minutes)
+
+
 def build_app(settings: Settings | None = None) -> App:
     settings = settings or Settings()
-    provider = build_provider(settings)
-    store = InMemorySessionStore(ttl_minutes=settings.aw_session_ttl_minutes)
+    meter = UsageMeter(load_price_table(settings.aw_price_table))
+    provider = build_provider(settings, meter=meter)
+    store = _build_store(settings)
     engine = ArgumentEngine(provider, settings.engine_settings())
     return App(
         settings=settings,
@@ -54,4 +67,5 @@ def build_app(settings: Settings | None = None) -> App:
         store=store,
         engine=engine,
         voice=_load_voice_profile(settings),
+        meter=meter,
     )

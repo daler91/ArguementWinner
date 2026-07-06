@@ -34,6 +34,7 @@ Paste your opponent's message and get 3 winning replies.
 Commands:
   /persona logician|savage|diplomat|socratic|auto   force a persona
   1|2|3        mark that candidate as sent (feeds future context)
+  /usage       show token counts and estimated cost so far
   /reset       start a fresh argument
   /quit        exit
 """
@@ -69,6 +70,9 @@ async def run_repl(app: App) -> None:
             continue
         if line == "/quit":
             return
+        if line == "/usage":
+            print(app.meter.format_report())
+            continue
         if line == "/reset":
             transcript.clear()
             last_result = None
