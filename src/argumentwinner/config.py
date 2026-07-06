@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from argumentwinner.core.models import EngineSettings, SpiceLevel
+from argumentwinner.core.models import EngineSettings, Persona, SpiceLevel
 
 
 class Settings(BaseSettings):
@@ -31,6 +31,12 @@ class Settings(BaseSettings):
 
     # Engine
     aw_spice_level: SpiceLevel = SpiceLevel.MEDIUM
+
+    # Desktop helper (works in any app: copy a message, press the hotkey, the
+    # comeback lands on your clipboard ready to paste)
+    aw_desktop_hotkey: str = "<ctrl>+<alt>+w"
+    aw_desktop_cycle_hotkey: str = "<ctrl>+<alt>+e"
+    aw_desktop_persona: Persona | None = None
 
     # Auto-combat guardrails
     aw_combat_cooldown_seconds: float = 20.0
