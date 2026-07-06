@@ -28,9 +28,35 @@ AW_LLM_PROVIDER=fake python -m argumentwinner --repl
 # 4. Same, against a real model
 AW_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-... python -m argumentwinner --repl
 
-# 5. Run the Discord bot
+# 5a. Run the desktop helper (works in ANY app — see below)
+pip install -e ".[desktop]"
+python -m argumentwinner --desktop
+
+# 5b. Run the Discord bot
 python -m argumentwinner
 ```
+
+## Desktop helper (argue for you in any app)
+
+`python -m argumentwinner --desktop` runs a small background helper that lets
+the tool write your replies **anywhere** — Discord, iMessage, Slack, email —
+while *you* stay the one who sends them (so there's no account automation and
+nothing against any platform's rules):
+
+1. Copy the message you're arguing with (Ctrl/Cmd-C).
+2. Press **Ctrl+Alt+W**. The winning comeback is now on your clipboard.
+3. Paste it and send.
+
+Press **Ctrl+Alt+E** to swap in the next candidate without regenerating. Both
+hotkeys, and an optional fixed persona, are configurable — see the desktop
+section of [.env.example](.env.example). Install the extra first:
+`pip install -e ".[desktop]"`.
+
+Platform notes: the global hotkey needs accessibility permission on macOS
+(System Settings → Privacy & Security → Accessibility) and an X11 session on
+Linux (Wayland restricts global key capture). Native "copied!" notifications
+use `osascript` on macOS and `notify-send` on Linux; elsewhere the helper just
+prints to its terminal.
 
 ## Using it on Discord
 
@@ -91,6 +117,7 @@ src/argumentwinner/
 ├── llm/                 anthropic / openai+ollama / fake backends, RoleRouter
 └── adapters/
     ├── discord/         translate, suggestion UI, auto-combat, sending
+    ├── desktop/         clipboard + global hotkey helper (works in any app)
     └── cli/             REPL — proves the engine is platform-agnostic
 ```
 
@@ -106,7 +133,9 @@ Design decisions worth knowing:
   never reaches the engine as an empty string.
 - **A new platform adapter** = translate native events → core models, fetch
   history, call `engine.suggest()` / `engine.combat_reply()`, render the
-  result. Zero core changes (the CLI REPL is the proof).
+  result. Zero core changes (the CLI REPL and desktop helper are the proof —
+  the desktop helper reuses the engine unchanged, translating clipboard text in
+  and clipboard text out).
 
 ## Development
 
