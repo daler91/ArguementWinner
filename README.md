@@ -126,6 +126,29 @@ keeps a small rolling window of messages seen **while it's running** — right
 after a restart, context is thin until the chat moves again (the `/argue`
 target itself always works, since it rides on your reply).
 
+## Deploying (Railway or any Docker host)
+
+The bots don't run on your phone — they run on a server, and your phone talks
+to them through the Discord/Telegram apps. The included [Dockerfile](Dockerfile)
+runs on any Docker host; on [Railway](https://railway.com) it's a few clicks:
+
+1. **New Project → Deploy from GitHub repo** → pick this repo. Railway sees
+   the Dockerfile ([railway.json](railway.json) pins that + always-restart).
+2. **Variables tab** → add `ANTHROPIC_API_KEY` and `DISCORD_BOT_TOKEN`
+   (plus any knobs from [.env.example](.env.example), e.g. `AW_SPICE_LEVEL`).
+3. **Attach a Volume** (service right-click → Attach Volume) with mount path
+   `/data` — the image already stores combat sessions in
+   `/data/argumentwinner.db`, so they survive redeploys.
+4. Skip networking entirely — the bot makes outbound connections only; it
+   needs no domain, port, or health check. Watch the deploy logs for the
+   bot's login line.
+
+For Telegram, set the service's custom start command
+(Settings → Deploy) to `python -m argumentwinner --telegram`. To run both
+platforms, create a second service from the same repo — one start command
+each; they can share the env vars via a shared variable group but need
+separate volumes.
+
 ## How it decides what to say
 
 Each reply is two LLM calls:
