@@ -1,0 +1,12 @@
+# Never bake secrets or local state into the image.
+.env
+*.db
+voice.md
+
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+tests
