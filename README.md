@@ -46,6 +46,9 @@ python -m argumentwinner
 # 5c. Run the Telegram bot
 pip install -e ".[telegram]"
 python -m argumentwinner --telegram
+
+# 5d. Run the phone-friendly web app (no extra install — see below)
+AW_WEB_TOKEN=pick-a-long-secret python -m argumentwinner --web
 ```
 
 ## Desktop helper (argue for you in any app)
@@ -69,6 +72,25 @@ Platform notes: the global hotkey needs accessibility permission on macOS
 Linux (Wayland restricts global key capture). Native "copied!" notifications
 use `osascript` on macOS and `notify-send` on Linux; elsewhere the helper just
 prints to its terminal.
+
+## Web app (use it from your phone)
+
+`python -m argumentwinner --web` serves a mobile-first page + tiny JSON API
+over the same engine — the phone equivalent of the desktop helper: paste the
+opponent's message (from any app), pick a persona, tap **Win this argument**,
+copy the reply. No extra dependency: it rides on aiohttp, which is already
+installed.
+
+- **Auth**: set `AW_WEB_TOKEN` to a long random secret (required — the server
+  refuses to start without it). The page asks for it once and remembers it on
+  the phone; every API call sends it as a Bearer header.
+- **Deploy**: on Railway, add a service from this repo with start command
+  `python -m argumentwinner --web`, set `AW_WEB_TOKEN` (+ your LLM key), then
+  **Settings → Networking → Generate Domain** — this is the one mode that
+  needs a domain. Railway's injected `PORT` is picked up automatically.
+- **Make it feel like an app**: open the domain on your phone → browser menu
+  → **Add to Home Screen**. Icon, full screen, done.
+- The footer's *usage & cost* link shows the metered token/cost report.
 
 ## Sound like you (voice profile)
 
@@ -220,6 +242,7 @@ src/argumentwinner/
     ├── discord/         translate, suggestion UI, auto-combat, sending
     ├── telegram/        translate, message cache, picker registry, auto-combat
     ├── desktop/         clipboard + global hotkey helper (works in any app)
+    ├── web/             phone-friendly page + JSON API (token-protected)
     └── cli/             REPL — proves the engine is platform-agnostic
 ```
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from argumentwinner.core.models import EngineSettings, Persona, SpiceLevel
@@ -36,6 +36,14 @@ class Settings(BaseSettings):
 
     # Telegram
     telegram_bot_token: SecretStr | None = None
+
+    # Web adapter (python -m argumentwinner --web): a phone-friendly page +
+    # JSON API. The token is the page's login secret — required to run.
+    # PORT is accepted as an alias because every PaaS (Railway, Render, ...)
+    # injects the listen port that way.
+    aw_web_token: SecretStr | None = None
+    aw_web_host: str = "0.0.0.0"
+    aw_web_port: int = Field(default=8080, validation_alias=AliasChoices("aw_web_port", "port"))
 
     # Engine
     aw_spice_level: SpiceLevel = SpiceLevel.MEDIUM

@@ -4,6 +4,7 @@
   python -m argumentwinner --repl     run the terminal REPL
   python -m argumentwinner --desktop  run the desktop helper (clipboard + hotkey)
   python -m argumentwinner --telegram run the Telegram bot
+  python -m argumentwinner --web      run the phone-friendly web app
 """
 
 from __future__ import annotations
@@ -28,6 +29,9 @@ def main() -> None:
     mode.add_argument(
         "--telegram", action="store_true", help="run the Telegram bot (long polling)"
     )
+    mode.add_argument(
+        "--web", action="store_true", help="run the phone-friendly web app (needs AW_WEB_TOKEN)"
+    )
     args = parser.parse_args()
 
     app = build_app()
@@ -44,6 +48,11 @@ def main() -> None:
 
         # run_polling owns its own event loop — call directly, never asyncio.run
         run_telegram_bot(app)
+    elif args.web:
+        from argumentwinner.adapters.web.server import run_web
+
+        # web.run_app owns its own event loop — call directly, never asyncio.run
+        run_web(app)
     else:
         from argumentwinner.adapters.discord.bot import run_bot
 
