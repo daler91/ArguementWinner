@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12141a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ArgumentWinner</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --text: #1c1c1f; --muted: #6b6b74;
+    --accent: #4f46e5; --accent-text: #ffffff; --border: #e2e2e8;
+    --safe: #1a7f37; --spicy: #b45309; --nuclear: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141a; --card: #1c1f27; --text: #ececf1; --muted: #9a9aa5;
+      --accent: #818cf8; --accent-text: #12141a; --border: #2b2f3a;
+      --safe: #4ade80; --spicy: #fbbf24; --nuclear: #f87171;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    max-width: 640px; margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin: 8px 0 2px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  textarea, input[type=password] {
+    width: 100%; background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px; font: inherit; outline: none;
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  textarea:focus, input:focus { border-color: var(--accent); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .chip {
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer;
+  }
+  .chip.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button.go {
+    width: 100%; padding: 14px; border: 0; border-radius: 12px;
+    background: var(--accent); color: var(--accent-text);
+    font: 600 17px/1 inherit; cursor: pointer;
+  }
+  button.go:disabled { opacity: .55; }
+  .digest { color: var(--muted); font-size: 14px; margin: 18px 2px 10px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px; margin-bottom: 12px;
+  }
+  .meta { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 8px; }
+  .badge { border-radius: 6px; padding: 2px 8px; font-weight: 700; letter-spacing: .03em; }
+  .badge.persona { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .badge.safe { color: var(--safe); } .badge.spicy { color: var(--spicy); } .badge.nuclear { color: var(--nuclear); }
+  .tactic { color: var(--muted); flex: 1; }
+  .reply { white-space: pre-wrap; margin-bottom: 10px; }
+  .copy {
+    border: 1px solid var(--border); background: transparent; color: var(--accent);
+    border-radius: 8px; padding: 7px 14px; font: 600 14px/1 inherit; cursor: pointer;
+  }
+  .error { color: var(--nuclear); margin-top: 12px; font-size: 14px; }
+  footer { margin-top: 22px; text-align: center; }
+  footer a { color: var(--muted); font-size: 13px; text-decoration: none; }
+  pre.usage {
+    text-align: left; font-size: 12px; color: var(--muted); background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+    overflow-x: auto; margin-top: 10px; display: none;
+  }
+  #login { display: none; }
+  #login button { margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>Argument<span>Winner</span></h1>
+  <p class="sub">Paste what they said. Win.</p>
+
+  <section id="login">
+    <p class="sub">Enter the access token (the server's <code>AW_WEB_TOKEN</code>). It is remembered on this phone.</p>
+    <input id="token" type="password" placeholder="access token" autocomplete="current-password">
+    <button class="go" id="saveToken">Unlock</button>
+    <div class="error" id="loginError"></div>
+  </section>
+
+  <section id="main" style="display:none">
+    <textarea id="message" placeholder="Paste the opponent's message…"></textarea>
+    <div class="chips" id="personas">
+      <button class="chip on" data-p="auto">Auto</button>
+      <button class="chip" data-p="logician">Logician</button>
+      <button class="chip" data-p="savage">Savage</button>
+      <button class="chip" data-p="diplomat">Diplomat</button>
+      <button class="chip" data-p="socratic">Socratic</button>
+    </div>
+    <button class="go" id="argue">Win this argument</button>
+    <div class="error" id="error"></div>
+    <div id="results"></div>
+    <footer>
+      <a href="#" id="usageLink">usage &amp; cost</a> · <a href="#" id="logout">forget token</a>
+      <pre class="usage" id="usage"></pre>
+    </footer>
+  </section>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var persona = "auto";
+
+  function token() { return localStorage.getItem("aw_token") || ""; }
+  function show(authed) {
+    $("login").style.display = authed ? "none" : "block";
+    $("main").style.display = authed ? "block" : "none";
+  }
+  show(!!token());
+
+  $("saveToken").onclick = function () {
+    var t = $("token").value.trim();
+    if (!t) { $("loginError").textContent = "Token cannot be empty."; return; }
+    localStorage.setItem("aw_token", t);
+    $("loginError").textContent = "";
+    show(true);
+  };
+  $("logout").onclick = function (e) {
+    e.preventDefault();
+    localStorage.removeItem("aw_token");
+    show(false);
+  };
+
+  $("personas").onclick = function (e) {
+    var chip = e.target.closest(".chip");
+    if (!chip) return;
+    persona = chip.dataset.p;
+    Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (c) {
+      c.classList.toggle("on", c === chip);
+    });
+  };
+
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign(
+      { "Authorization": "Bearer " + token() }, options.headers || {});
+    return fetch(path, options).then(function (res) {
+      if (res.status === 401) { localStorage.removeItem("aw_token"); show(false); }
+      return res.json().then(function (body) { return { ok: res.ok, body: body }; });
+    });
+  }
+
+  function copyText(text, button) {
+    var done = function () {
+      var old = button.textContent;
+      button.textContent = "Copied ✓";
+      setTimeout(function () { button.textContent = old; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done);
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta); done();
+    }
+  }
+
+  function render(data) {
+    var results = $("results");
+    results.innerHTML = "";
+    var digest = document.createElement("div");
+    digest.className = "digest";
+    digest.textContent = "~ " + data.digest;
+    results.appendChild(digest);
+    data.candidates.forEach(function (c) {
+      var card = document.createElement("div");
+      card.className = "card";
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      var p = document.createElement("span");
+      p.className = "badge persona"; p.textContent = c.persona;
+      var r = document.createElement("span");
+      r.className = "badge " + c.risk; r.textContent = c.risk.toUpperCase();
+      var t = document.createElement("span");
+      t.className = "tactic"; t.textContent = c.tactic_note;
+      meta.appendChild(p); meta.appendChild(r); meta.appendChild(t);
+      var reply = document.createElement("div");
+      reply.className = "reply"; reply.textContent = c.text;
+      var copy = document.createElement("button");
+      copy.className = "copy"; copy.textContent = "Copy";
+      copy.onclick = function () { copyText(c.text, copy); };
+      card.appendChild(meta); card.appendChild(reply); card.appendChild(copy);
+      results.appendChild(card);
+    });
+  }
+
+  $("argue").onclick = function () {
+    var message = $("message").value.trim();
+    $("error").textContent = "";
+    if (!message) { $("error").textContent = "Paste their message first."; return; }
+    var button = $("argue");
+    button.disabled = true;
+    button.textContent = "Thinking…";
+    api("/api/argue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: message, persona: persona })
+    }).then(function (res) {
+      if (res.ok) { render(res.body); }
+      else { $("error").textContent = res.body.error || "Something went wrong."; }
+    }).catch(function () {
+      $("error").textContent = "Network error — is the server up?";
+    }).finally(function () {
+      button.disabled = false;
+      button.textContent = "Win this argument";
+    });
+  };
+
+  $("usageLink").onclick = function (e) {
+    e.preventDefault();
+    api("/api/usage").then(function (res) {
+      var pre = $("usage");
+      pre.textContent = res.ok ? res.body.report : (res.body.error || "unavailable");
+      pre.style.display = pre.style.display === "block" ? "none" : "block";
+    });
+  };
+})();
+</script>
+</body>
+</html>

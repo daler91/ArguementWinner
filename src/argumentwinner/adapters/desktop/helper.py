@@ -14,18 +14,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from datetime import UTC, datetime
 
+from argumentwinner.adapters.common import single_message_context
 from argumentwinner.container import App
 from argumentwinner.core.models import (
     ArgumentContext,
-    ArgumentTurn,
     CandidateResponse,
-    ConversationRef,
     EngineResult,
-    Participant,
     Persona,
-    Role,
     VoiceProfile,
 )
 
@@ -33,30 +29,16 @@ from .notify import notify
 
 log = logging.getLogger(__name__)
 
-_REF = ConversationRef(platform="desktop", guild_id=None, channel_id="clipboard")
-_OPPONENT = Participant(id="opponent", display_name="Opponent")
-_YOU = Participant(id="you", display_name="You")
-
 
 def build_context_from_text(
     text: str,
     forced_persona: Persona | None = None,
     voice: VoiceProfile | None = None,
 ) -> ArgumentContext:
-    """A single pasted message becomes a one-turn argument context — no history
-    to fetch, so the opponent's message is both the target and the transcript."""
-    target = ArgumentTurn(
-        role=Role.OPPONENT,
-        author=_OPPONENT,
-        content=text.strip(),
-        message_id="clipboard",
-        timestamp=datetime.now(UTC),
-    )
-    return ArgumentContext(
-        ref=_REF,
-        target=target,
-        transcript=(target,),
-        beneficiary=_YOU,
+    return single_message_context(
+        text,
+        platform="desktop",
+        channel_id="clipboard",
         forced_persona=forced_persona,
         voice=voice,
     )

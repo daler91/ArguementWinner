@@ -4,9 +4,49 @@ messaging adapter (Telegram) proved the duplication was real."""
 
 from __future__ import annotations
 
-from argumentwinner.core.models import ArgumentSession, Role
+from datetime import UTC, datetime
+
+from argumentwinner.core.models import (
+    ArgumentContext,
+    ArgumentSession,
+    ArgumentTurn,
+    ConversationRef,
+    Participant,
+    Persona,
+    Role,
+    VoiceProfile,
+)
 
 BOUNDARIES = (". ", "! ", "? ", "\n")
+
+
+def single_message_context(
+    text: str,
+    *,
+    platform: str,
+    channel_id: str,
+    forced_persona: Persona | None = None,
+    voice: VoiceProfile | None = None,
+) -> ArgumentContext:
+    """A single pasted message becomes a one-turn argument context — no history
+    to fetch, so the opponent's message is both the target and the transcript.
+    (Shared by the desktop helper and the web adapter, which both take raw
+    pasted text rather than platform events.)"""
+    target = ArgumentTurn(
+        role=Role.OPPONENT,
+        author=Participant(id="opponent", display_name="Opponent"),
+        content=text.strip(),
+        message_id=channel_id,
+        timestamp=datetime.now(UTC),
+    )
+    return ArgumentContext(
+        ref=ConversationRef(platform=platform, guild_id=None, channel_id=channel_id),
+        target=target,
+        transcript=(target,),
+        beneficiary=Participant(id="you", display_name="You"),
+        forced_persona=forced_persona,
+        voice=voice,
+    )
 
 
 def cut(text: str, limit: int) -> tuple[str, int]:
